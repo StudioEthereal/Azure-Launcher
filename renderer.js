@@ -21,11 +21,11 @@ const FIREBASE_FRIENDS_CONFIG = {
 
 try {
     const { initializeApp, getApps, getApp } = require('firebase/app');
-    const { getDatabase, ref, set, onValue, remove, update } = require('firebase/database');
+    const { getDatabase, ref, set, onValue, remove, update, off } = require('firebase/database');
 
     const firebaseAppInstance = getApps().length ? getApp() : initializeApp(FIREBASE_FRIENDS_CONFIG);
     firebaseDb = getDatabase(firebaseAppInstance);
-    firebaseFns = { ref, set, onValue, remove, update };
+    firebaseFns = { ref, set, onValue, remove, update, off };
     firebaseReady = true;
 } catch (error) {
     console.warn('Firebase no disponible en el renderer:', error?.message || error);
@@ -1457,19 +1457,21 @@ function startFriendsRealtimeSync() {
     const identity = getLinkedIdentity();
     if (!identity) return;
 
-    const identityKey = cleanFriendKey(identity);
-    if (activeFriendsIdentity === identityKey && friendsRealtimeUnsubs.length > 0) {
-        syncPresenceToFirebase();
-        return;
+    // 1. EVITAR CONGELAMIENTOS: Limpiar escuchadores anteriores
+    friendsRealtimeUnsubs.forEach(unsub => unsub());
+    friendsRealtimeUnsubs = [];
+    if (friendsPresenceInterval) {
+        clearInterval(friendsPresenceInterval);
     }
 
-    stopFriendsRealtimeSync();
-    activeFriendsIdentity = identityKey;
+    activeFriendsIdentity = cleanFriendKey(identity);
     ensureFriendsPresenceHeartbeat();
 
     const { ref, onValue } = firebaseFns;
 
-    friendsRealtimeUnsubs.push(onValue(ref(firebaseDb, `solicitudes/${identityKey}`), (snapshot) => {
+    // 2. Escuchar Solicitudes
+    const reqRef = ref(firebaseDb, `solicitudes/${activeFriendsIdentity}`);
+    const unsubReq = onValue(reqRef, (snapshot) => {
         const currentStore = getFriendsStore();
         const previousIds = new Set(currentStore.pendingRequests.map((item) => item.requestKey || item.id));
         const data = snapshot.val() || {};
@@ -1490,9 +1492,14 @@ function startFriendsRealtimeSync() {
 
         saveSyncedFriendsStore(pendingRequests, currentStore.friends);
         if (activeSection === 'friends') renderFriendsPanel();
-    }));
+    });
+    friendsRealtimeUnsubs.push(() => {
+        firebaseFns.off(reqRef);
+    });
 
-    friendsRealtimeUnsubs.push(onValue(ref(firebaseDb, `amigos/${identityKey}`), (snapshot) => {
+    // 3. Escuchar Amigos Activos
+    const friendsRef = ref(firebaseDb, `amigos/${activeFriendsIdentity}`);
+    const unsubFriends = onValue(friendsRef, (snapshot) => {
         const currentStore = getFriendsStore();
         const data = snapshot.val() || {};
         const friends = Object.entries(data).map(([friendKey, item]) => enrichFriendEntry({
@@ -1504,32 +1511,76 @@ function startFriendsRealtimeSync() {
 
         saveSyncedFriendsStore(currentStore.pendingRequests, friends);
         if (activeSection === 'friends') renderFriendsPanel();
-    }));
+    });
+    friendsRealtimeUnsubs.push(() => {
+        firebaseFns.off(friendsRef);
+    });
 
-    friendsRealtimeUnsubs.push(onValue(ref(firebaseDb, 'presencia'), (snapshot) => {
-        cachedFriendsPresence = snapshot.val() || {};
-        const currentStore = getFriendsStore();
-        const mergedPending = currentStore.pendingRequests.map((friend) => enrichFriendEntry(friend));
-        const mergedFriends = currentStore.friends.map((friend) => enrichFriendEntry(friend));
-        saveSyncedFriendsStore(mergedPending, mergedFriends);
-        if (activeSection === 'friends') renderFriendsPanel();
-    }));
+    // 4. Actualizar MI presencia (Estoy conectado en el launcher)
+    updateMyPresence();
+    friendsPresenceInterval = setInterval(updateMyPresence, 60000); // Cada 1 minuto, no cada 30s
 
-    syncPresenceToFirebase();
+    // ESCUCHAR TRANSFERENCIAS ENTRANTES
+    const transfersRef = ref(firebaseDb, `transferencias/${activeFriendsIdentity}`);
+    onValue(transfersRef, (snapshot) => {
+        const data = snapshot.val();
+        const container = document.getElementById('transfers-list');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        if (data) {
+            Object.keys(data).forEach(key => {
+                const trans = data[key];
+                const icon = trans.tipo === 'ip' ? 'fa-server' : 'fa-image';
+                
+                container.innerHTML += `
+                    <div class="friend-card" style="border-left: 3px solid var(--accent-light);">
+                        <div class="friend-info">
+                            <span class="friend-name"><i class="fa-solid ${icon}"></i> De: ${trans.remitente}</span>
+                            <span class="friend-status-text">Quiere enviarte una ${trans.tipo}</span>
+                        </div>
+                        <div class="friend-actions">
+                            <button class="c-btn btn-accept" onclick="aceptarTransferencia('${key}', '${trans.tipo}', '${trans.contenido}')">
+                                <i class="fa-solid fa-check"></i>
+                            </button>
+                            <button class="c-btn btn-secondary" onclick="rechazarTransferencia('${key}')">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    });
 }
 
-function unlinkDiscordAccount() {
-    if (!confirm(t('unlinkConfirm'))) return;
+async function unlinkDiscordAccount() {
+    // Usamos tu sistema de modales para mostrar peligro
+    const confirm = await showConfirmModal(
+        'Eliminar Cuenta y Desvincular',
+        '¿Estás seguro? Se borrará tu lista de amigos, historial y nadie podrá encontrarte en Azure Launcher. Esta acción no se puede deshacer.',
+        'danger' // <- Esto debería poner los botones en rojo si tienes el CSS configurado
+    );
 
-    stopFriendsRealtimeSync();
-    removeDiscordLinkData();
-    localStorage.removeItem(getFriendsStoreStorageKey());
-    localStorage.removeItem('azureFriendsStore');
-    closeModal('modal-discord-auth');
-    closeFriendProfile();
-    renderFriendsPanel();
-    showSection('friends');
-    showToast(t('unlinkSuccess'));
+    if (confirm) {
+        const currentTag = getLinkedIdentity();
+        if (currentTag && firebaseDb && firebaseFns) {
+            const cleanId = cleanFriendKey(currentTag);
+            // BORRAR TODO RASTRO DE FIREBASE
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `amigos/${cleanId}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `solicitudes/${cleanId}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `presencia/${cleanId}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `transferencias/${cleanId}`)); // Por si acaso
+        }
+
+        stopFriendsRealtimeSync();
+        removeDiscordLinkData();
+        localStorage.removeItem(getFriendsStoreStorageKey());
+        localStorage.removeItem('azureFriendsStore');
+        showToast('Eliminado', 'Tu perfil ha sido borrado de la red', 'info');
+        
+        setTimeout(() => location.reload(), 1500);
+    }
 }
 
 function renderFriendsPanel() {
@@ -1599,6 +1650,9 @@ function renderFriendsPanel() {
                         <small class="friend-presence">${escapeHtml(friend.country || t('unknown'))} · ${escapeHtml(friend.localTime || '--:--')}</small>
                     </div>
                 </div>
+                <div class="friend-actions">
+                    <button class="btn-small remove" onclick="event.stopPropagation(); removeFriend('${friend.tag}')" title="Eliminar amigo">×</button>
+                </div>
                 <span class="${friend.online ? 'status-online' : 'status-offline'}">${friend.online ? '●' : '●'}</span>
             </div>
         `).join('')
@@ -1619,6 +1673,9 @@ function renderFriendsPanel() {
                             <i class="fa-solid fa-user-plus"></i> ${t('sendRequest')}
                         </button>
                     </div>
+                    <button class="btn-secondary" onclick="document.getElementById('privacy-settings-modal').classList.remove('hidden')">
+                        <i class="fa-solid fa-gear"></i> Ajustes
+                    </button>
                     <button class="btn-secondary danger" onclick="unlinkDiscordAccount()">
                         <i class="fa-solid fa-link-slash"></i> ${t('unlinkDiscordBtn')}
                     </button>
@@ -1632,6 +1689,10 @@ function renderFriendsPanel() {
                 <div class="friends-column-card">
                     <h4>${t('friendsTab')}</h4>
                     ${friendsHtml}
+                </div>
+                <div class="friends-column-card">
+                    <h4>Transferencias Entrantes</h4>
+                    <div id="transfers-list" class="friends-grid"></div>
                 </div>
             </div>
         </div>
@@ -1883,6 +1944,23 @@ async function rejectFriendRequest(requestId) {
     saveFriendsStore(store);
     renderFriendsPanel();
     showToast(t('rejectRequest'));
+}
+
+// ELIMINAR AMIGO (NUEVA FUNCIÓN)
+async function removeFriend(friendTag) {
+    const confirm = await showConfirmModal('Eliminar Amigo', `¿Seguro que deseas eliminar a ${friendTag}?`);
+    if (!confirm) return;
+
+    const myId = cleanFriendKey(getLinkedIdentity());
+    const friendId = cleanFriendKey(friendTag);
+
+    try {
+        await firebaseFns.remove(firebaseFns.ref(firebaseDb, `amigos/${myId}/${friendId}`));
+        await firebaseFns.remove(firebaseFns.ref(firebaseDb, `amigos/${friendId}/${myId}`)); // Lo borraste, él también te pierde
+        showToast('Eliminado', 'Amigo eliminado', 'info');
+    } catch (e) {
+        showToast('Error', 'No se pudo eliminar al amigo', 'error');
+    }
 }
 
 function openFriendProfile(friendTag) {
@@ -2666,4 +2744,135 @@ function applyLanguage() {
     localStorage.setItem('launcherLang', selected);
     applyTranslations(selected);
     showToast(`${t('applyLanguageBtn', selected)}: ${selected.toUpperCase()}`, 1600);
+}
+
+// FUNCIONES PARA TOP SERVIDORES REALES
+function registrarEntradaServidor(ip) {
+    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
+    if (!stats[ip]) stats[ip] = { plays: 0, hidden: false };
+    stats[ip].plays += 1;
+    localStorage.setItem('azure_server_stats', JSON.stringify(stats));
+}
+
+function toggleOcultarServidor(ip) {
+    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
+    if (!stats[ip]) stats[ip] = { plays: 0, hidden: false };
+    
+    stats[ip].hidden = !stats[ip].hidden;
+    localStorage.setItem('azure_server_stats', JSON.stringify(stats));
+    
+    const estado = stats[ip].hidden ? 'oculto' : 'visible';
+    showToast('Privacidad', `El servidor ${ip} ahora está ${estado}`, 'info');
+    
+    renderizarTopServidores(); // Actualiza la pantalla
+}
+
+function obtenerTopServidoresReales() {
+    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
+    
+    return Object.keys(stats)
+        .filter(ip => !stats[ip].hidden) // Filtra los que están ocultos
+        .map(ip => ({ ip: ip, plays: stats[ip].plays }))
+        .sort((a, b) => b.plays - a.plays) // Ordena de mayor a menor
+        .slice(0, 3); // Toma solo los 3 primeros
+}
+
+// FUNCIONES PARA TRANSFERENCIAS
+function aceptarTransferencia(id, tipo, contenido) {
+    if (tipo === 'ip') {
+        // Añadir IP a tu lista de servidores locales
+        agregarServidorLocal(contenido);
+        showToast('Servidor', 'IP añadida a tus servidores', 'success');
+    } else if (tipo === 'captura') {
+        // Lógica para guardar o ver la captura
+        showToast('Captura', 'Captura recibida', 'success');
+    }
+    rechazarTransferencia(id); // Borramos del buzón después de aceptar
+}
+
+function rechazarTransferencia(id) {
+    const myId = cleanFriendKey(getLinkedIdentity());
+    firebaseFns.remove(firebaseFns.ref(firebaseDb, `transferencias/${myId}/${id}`));
+}
+
+// FUNCIONES PARA CAPTURA FAVORITA
+function establecerCapturaFavorita() {
+    const rutaImagen = document.getElementById('ss-full-image').src;
+    
+    // 1. Guardar localmente
+    localStorage.setItem('azure_fav_screenshot', rutaImagen);
+    
+    // 2. Subir a Firebase (Para que tus amigos la vean)
+    const miTag = document.getElementById('user-name').innerText;
+    if (miTag && miTag !== 'Usuario' && firebaseDb) {
+        const miRuta = cleanFriendKey(miTag);
+        
+        // Creamos una sección 'perfiles' en la base de datos
+        firebaseFns.update(firebaseFns.ref(firebaseDb, `perfiles/${miRuta}`), {
+            capturaFavorita: rutaImagen,
+            actualizado: Date.now()
+        }).then(() => {
+            showToast('Perfil', '¡Captura favorita actualizada!', 'success');
+        });
+    } else {
+        showToast('Perfil', 'Captura guardada localmente', 'success');
+    }
+}
+
+// FUNCIONES AUXILIARES
+function showConfirmModal(title, message, type = 'default') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('custom-confirm');
+        const titleElem = document.getElementById('confirm-title');
+        const messageElem = document.getElementById('confirm-message');
+        const acceptBtn = document.getElementById('btn-confirm-accept');
+        const cancelBtn = document.getElementById('btn-confirm-cancel');
+
+        if (!modal || !titleElem || !messageElem || !acceptBtn || !cancelBtn) {
+            resolve(confirm(message));
+            return;
+        }
+
+        titleElem.innerText = title;
+        messageElem.innerText = message;
+
+        if (type === 'danger') {
+            acceptBtn.classList.add('btn-danger');
+        } else {
+            acceptBtn.classList.remove('btn-danger');
+        }
+
+        modal.classList.remove('hidden');
+
+        const handleAccept = () => {
+            modal.classList.add('hidden');
+            acceptBtn.removeEventListener('click', handleAccept);
+            cancelBtn.removeEventListener('click', handleCancel);
+            resolve(true);
+        };
+
+        const handleCancel = () => {
+            modal.classList.add('hidden');
+            acceptBtn.removeEventListener('click', handleAccept);
+            cancelBtn.removeEventListener('click', handleCancel);
+            resolve(false);
+        };
+
+        acceptBtn.addEventListener('click', handleAccept);
+        cancelBtn.addEventListener('click', handleCancel);
+    });
+}
+
+function requestTransfer(type) {
+    // Función para solicitar transferencia
+    if (type === 'ip') {
+        const ip = prompt('Ingresa la IP del servidor a transferir:');
+        if (ip) {
+            // Lógica para enviar IP
+            showToast('Transferencia', 'Función no implementada aún', 'info');
+        }
+    } else if (type === 'capture') {
+        // Lógica para enviar captura
+        showToast('Transferencia', 'Función no implementada aún', 'info');
+    }
 }

@@ -251,7 +251,16 @@
             </div>
             <div class="screenshot-detail-content">
                 <img id="ss-full-image" src="" alt="Captura de Minecraft" class="screenshot-detail-img" />
-                <button class="btn-copy-path" onclick="copySSImage()"><i class="fa-solid fa-copy"></i> <span data-i18n="copyImage">Copiar imagen al portapapeles</span></button>
+                
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="btn-copy-path" onclick="copySSImage()">
+                        <i class="fa-solid fa-copy"></i> Copiar
+                    </button>
+                    <button class="btn-primary" onclick="establecerCapturaFavorita()">
+                        <i class="fa-solid fa-star"></i> Marcar como Favorita
+                    </button>
+                </div>
+                
             </div>
         </div>
     </div>
@@ -312,6 +321,29 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="privacy-settings-modal" class="modal-overlay hidden">
+        <div class="confirm-card" style="max-width: 500px; padding: 20px;">
+            <h3 style="color: var(--accent-light); margin-bottom: 15px;">
+                <i class="fa-solid fa-shield-halved"></i> Ajustes de Perfil y Privacidad
+            </h3>
+            
+            <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <h4>Servidores Ocultos del Top</h4>
+                <p style="font-size: 12px; opacity: 0.7;">Escribe la IP de un servidor que no quieras que aparezca en tu Top de más jugados.</p>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <input type="text" id="ip-to-hide" placeholder="Ej: mi-servidor-privado.net" class="c-input">
+                    <button class="btn-primary" onclick="toggleOcultarServidor(document.getElementById('ip-to-hide').value)">
+                        Ocultar/Mostrar
+                    </button>
+                </div>
+            </div>
+
+            <button class="c-btn btn-secondary" style="width: 100%;" onclick="document.getElementById('privacy-settings-modal').classList.add('hidden')">
+                Cerrar Ajustes
+            </button>
         </div>
     </div>
 
