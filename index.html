@@ -1,0 +1,348 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Launcher</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="custom-titlebar" ondblclick="controlWindow('max')">
+        <div class="titlebar-brand">
+            <img src="Azure-Launcher.png" class="titlebar-logo" alt="Azure Launcher">
+            <span>Azure Launcher</span>
+        </div>
+
+        <div class="titlebar-actions">
+            <button class="titlebar-btn" onclick="controlWindow('min')" title="Minimizar" aria-label="Minimizar">
+                <i class="fa-solid fa-minus"></i>
+            </button>
+            <button id="btn-maximize" class="titlebar-btn" onclick="controlWindow('max')" title="Maximizar" aria-label="Maximizar">
+                <i class="fa-regular fa-square"></i>
+            </button>
+            <button class="titlebar-btn titlebar-btn-close" onclick="controlWindow('close')" title="Cerrar" aria-label="Cerrar">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="aurora-bg"></div>
+
+    <section id="screen-splash" class="screen active">
+        <div class="logo-container">
+            <div class="aurora-glow"></div>
+            <img src="Azure-Launcher.png" class="main-logo" alt="Azure Logo">
+        </div>
+        <h2 class="loading-text">INICIANDO</h2>
+    </section>
+
+    <section id="screen-account-selector" class="screen">
+        <div class="account-manager-container">
+            <h1 class="title-light" data-i18n="accountSelectorTitle">¿QUIÉN ESTÁ JUGANDO?</h1>
+            <div id="accounts-grid" class="accounts-grid"></div>
+        </div>
+    </section>
+
+    <section id="screen-login-choice" class="screen">
+        <h1 class="title-light" data-i18n="loginTitle">INICIAR SESIÓN</h1>
+        <div class="choice-container">
+            <div class="choice-card" onclick="openMicrosoftLogin()">
+                <div class="icon-wrapper"><i class="fa-brands fa-microsoft icon-premium"></i></div>
+                <h3 data-i18n="premiumTitle">Premium</h3>
+                <p data-i18n="premiumDesc">Cuenta Microsoft</p>
+            </div>
+            <div class="choice-card" onclick="showOfflineLogin()">
+                <div class="icon-wrapper"><i class="fa-solid fa-user-ninja icon-offline"></i></div>
+                <h3 data-i18n="offlineTitle">No Premium</h3>
+                <p data-i18n="offlineDesc">Acceso local / offline</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="screen-offline-login" class="screen">
+        <div class="login-box">
+            <div class="icon-header"><i class="fa-solid fa-circle-user"></i></div>
+            <h3 data-i18n="offlinePrompt">Introduce un nombre de usuario</h3>
+            <div class="input-group">
+                <i class="fa-solid fa-signature"></i>
+                <input type="text" id="offline-name" data-i18n-placeholder="usernamePlaceholder" placeholder="Nombre de usuario">
+            </div>
+            <button class="btn-primary" onclick="loginOffline()">
+                <i class="fa-solid fa-right-to-bracket"></i> <span data-i18n="access">Acceder</span>
+            </button>
+            <button class="btn-primary btn-back" onclick="showScreen('screen-login-choice')">
+                <i class="fa-solid fa-arrow-left"></i> <span data-i18n="back">Volver</span>
+            </button>
+        </div>
+    </section>
+
+    <main id="screen-dashboard" class="screen">
+        <aside class="sidebar">
+            <div class="user-profile-card">
+                <div class="profile-header">
+                    <img src="Azure-Launcher.png" id="user-avatar" alt="Avatar">
+                    <div class="user-info">
+                        <span id="user-name">Usuario</span>
+                        <small><span class="status-dot"></span> <span data-i18n="online">En línea</span></small>
+                    </div>
+                </div>
+                <div class="profile-actions">
+                    <button class="action-btn btn-add" title="Agregar cuenta" onclick="showOfflineLogin()"><i class="fa-solid fa-user-plus"></i></button>
+                    <button class="action-btn btn-edit" title="Editar cuentas" onclick="toggleEditAccounts()"><i class="fa-solid fa-user-gear"></i></button>
+                    <button class="action-btn btn-logout" title="Cerrar sesión" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i></button>
+                </div>
+                <select id="account-select" class="modern-select" onchange="switchAccount()"></select>
+
+                <div id="account-edit-panel" class="account-edit-panel hidden">
+                    <small class="account-edit-title" data-i18n="editModeTitle">Modo edición: eliminar cuentas</small>
+                    <div id="account-edit-list"></div>
+                </div>
+            </div>
+
+            <div class="versions-section">
+                <div class="versions-header">
+                    <span data-i18n="installedVersions">VERSIONES INSTALADAS</span>
+                    <button class="btn-icon" onclick="addVersion()"><i class="fa-solid fa-plus"></i></button>
+                </div>
+                <div id="versions-list" class="versions-list">
+                    <p class="empty-text" data-i18n="versionsEmpty">No hay versiones. Haz clic en '+' para agregar.</p>
+                </div>
+            </div>
+
+            <div class="play-zone">
+                <label class="version-label" data-i18n="selectedVersion">VERSIÓN SELECCIONADA:</label>
+                <select id="version-select">
+                    <option value="1.20.4">Minecraft 1.20.4</option>
+                    <option value="1.8.9">Minecraft 1.8.9</option>
+                </select>
+                <button id="btn-play-main" class="btn-play">
+                    <i class="fa-solid fa-play"></i> <span data-i18n="playNow">¡JUGAR AHORA!</span>
+                </button>
+            </div>
+        </aside>
+
+        <section class="main-content">
+            <header class="content-header">
+                <div class="header-top">
+                    <h1 id="welcome-msg">¡Bienvenido a Azure Launcher!</h1>
+                    <div id="status-bar" class="status-badge">
+                        <i class="fa-solid fa-earth-americas"></i> <span id="country-text">Cargando...</span> 
+                        <span class="separator">|</span>
+                        <i class="fa-solid fa-clock"></i> <span id="time-text">Cargando...</span>
+                    </div>
+                </div>
+                <div class="section-tabs">
+                    <button class="tab-btn" onclick="showSection('play')"><i class="fa-solid fa-gamepad"></i> <span data-i18n="playTab">Jugar</span></button>
+                    <button class="tab-btn" onclick="showSection('screenshots')"><i class="fa-solid fa-camera-retro"></i> <span data-i18n="screenshotsTab">Capturas</span></button>
+                    <button class="tab-btn" onclick="showSection('servers')"><i class="fa-solid fa-server"></i> <span data-i18n="serversTab">Servidores</span></button>
+                    <button class="tab-btn" onclick="showSection('friends')"><i class="fa-solid fa-user-group"></i> <span data-i18n="friendsTab">Amigos</span></button>
+                    <button class="tab-btn" onclick="showSection('settings')"><i class="fa-solid fa-sliders"></i> <span data-i18n="settingsTab">Ajustes</span></button>
+                </div>
+            </header>
+            <div class="news-container" id="main-panel">
+                <div id="ss-grid" class="image-grid"></div>
+                <div id="server-list" class="server-list"></div>
+                <div id="friends-panel" class="friends-panel" style="display: none;"></div>
+                
+                <div id="play-info" class="info-card">
+                    <h3 data-i18n="readyTitle">Listo para la aventura</h3>
+                    <p data-i18n="readyDesc">Selecciona una versión y presiona el botón JUGAR para comenzar.</p>
+                </div>
+            </div>
+
+            <div id="settings-panel" style="display: none;" class="settings-box">
+    <div class="settings-section">
+        <h2><i class="fa-solid fa-palette"></i> <span data-i18n="customizeTitle">Personalización de Interfaz</span></h2>
+        <p class="settings-desc" data-i18n="paletteDesc">Haz clic en un color para ver una previsualización y luego guardarlo:</p>
+        <div id="color-palette-grid" class="palette-grid">
+            <div class="palette-item" onclick="selectPaletteColor('Azul Azure', '#0f427e', event)" style="--color: #0f427e;"><span>Azul Azure</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Cian Glacial', '#0ea5e9', event)" style="--color: #0ea5e9;"><span>Cian Glacial</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Turquesa Neon', '#14b8a6', event)" style="--color: #14b8a6;"><span>Turquesa Neon</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Verde Bosque', '#1b3d2f', event)" style="--color: #1b3d2f;"><span>Verde Bosque</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Oro Solar', '#a16207', event)" style="--color: #a16207;"><span>Oro Solar</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Naranja Quemado', '#8b4513', event)" style="--color: #8b4513;"><span>Naranja Quemado</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Rojo Sangre', '#660000', event)" style="--color: #660000;"><span>Rojo Sangre</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Rosa Nova', '#be185d', event)" style="--color: #be185d;"><span>Rosa Nova</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Púrpura Abismo', '#3d1b3d', event)" style="--color: #3d1b3d;"><span>Púrpura Abismo</span></div>
+            <div class="palette-item" onclick="selectPaletteColor('Gris Espacial', '#2c3e50', event)" style="--color: #2c3e50;"><span>Gris Espacial</span></div>
+        </div>
+        <div id="palette-action-bar" class="action-bar hidden">
+            <span id="selected-color-name">Color: Ninguno</span>
+            <button id="btn-apply-theme" class="btn-save" onclick="applyPaletteColor()">
+                <i class="fa-solid fa-check"></i> <span data-i18n="saveColor">Guardar color</span>
+            </button>
+        </div>
+    </div>
+    <hr class="settings-divider">
+    <div class="settings-section">
+        <h2><i class="fa-solid fa-language"></i> <span data-i18n="languageRegionTitle">Idioma y Región</span></h2>
+        <div class="language-region-card">
+            <div class="language-hero">
+                <div class="language-hero-icon"><i class="fa-solid fa-earth-americas"></i></div>
+                <div>
+                    <h3 data-i18n="languageHeroTitle">Personaliza el idioma del launcher</h3>
+                    <p data-i18n="languageHeroDesc">Los botones, pestañas y mensajes cambian al instante.</p>
+                </div>
+            </div>
+
+            <div class="language-stats-grid">
+                <div class="language-stat-card">
+                    <span class="language-stat-label" data-i18n="activeLanguage">Idioma activo</span>
+                    <strong id="selected-language-preview">Español</strong>
+                </div>
+                <div class="language-stat-card">
+                    <span class="language-stat-label" data-i18n="detectedCountry">País detectado</span>
+                    <strong id="region-country-preview">Cargando...</strong>
+                </div>
+                <div class="language-stat-card">
+                    <span class="language-stat-label" data-i18n="connectionStatus">Estado</span>
+                    <strong id="connection-status-preview">En línea</strong>
+                </div>
+            </div>
+
+            <div class="language-selection-area">
+                <select id="language-select-new" class="modern-select">
+                    <option value="es">🇪🇸 España (Español)</option>
+                    <option value="en">🇺🇸 Estados Unidos (English)</option>
+                    <option value="pt">🇧🇷 Brasil (Português)</option>
+                    <option value="fr">🇫🇷 Francia (Français)</option>
+                </select>
+                <button class="btn-save" onclick="applyLanguage()">
+                    <i class="fa-solid fa-globe"></i> <span data-i18n="applyLanguageBtn">Aplicar idioma</span>
+                </button>
+            </div>
+        </div>
+    </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="screenshot-modal" class="modal-overlay hidden">
+        <div class="screenshot-modal-card">
+            <div class="screenshot-modal-header">
+                <h2 class="screenshot-modal-title" data-i18n="screenshotsTitle">Capturas</h2>
+                <button class="screenshot-modal-close" onclick="closeScreenshotModal()">×</button>
+            </div>
+            <div id="screenshot-grid" class="screenshot-grid"></div>
+            <div class="modal-footer" style="margin-top:10px; display:flex; justify-content: flex-start; color:#a9c7e8; font-size:0.85rem;">
+                <span id="screenshot-tip" data-i18n="screenshotsTip">Haz clic en una miniatura para ver la captura y copiar la imagen.</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="custom-confirm" class="modal-overlay hidden">
+        <div class="confirm-card">
+            <div class="confirm-icon"><i class="fa-solid fa-circle-exclamation"></i></div>
+            <h2 data-i18n="deleteAccountTitle">¿Eliminar esta cuenta?</h2>
+            <p data-i18n="deleteAccountDesc">Esta acción no se puede deshacer.</p>
+            <div class="confirm-buttons">
+                <button class="c-btn btn-cancel" onclick="closeConfirm()" data-i18n="cancel">Cancelar</button>
+                <button id="btn-confirm-accept" class="c-btn btn-accept" onclick="handleAcceptDelete()" data-i18n="accept">Aceptar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="screenshot-detail-modal" class="modal-overlay hidden">
+        <div class="confirm-card" style="max-width: 760px; width: 95%; padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <span id="ss-filename" style="font-weight: 700; color: white;"></span>
+                <button class="screenshot-modal-close" onclick="closeSSDetail()">×</button>
+            </div>
+            <div class="screenshot-detail-content">
+                <img id="ss-full-image" src="" alt="Captura de Minecraft" class="screenshot-detail-img" />
+                <button class="btn-copy-path" onclick="copySSImage()"><i class="fa-solid fa-copy"></i> <span data-i18n="copyImage">Copiar imagen al portapapeles</span></button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-discord-auth" class="modal-overlay hidden">
+        <div class="confirm-card discord-auth-card">
+            <div id="auth-step-1">
+                <i class="fa-brands fa-discord discord-auth-icon"></i>
+                <h3 data-i18n="friendsLinkTitle">Vincular con Discord</h3>
+                <p data-i18n="friendsLinkDesc">¿Deseas vincular tu nick de Minecraft con Discord para poder tener a tus amigos aquí?</p>
+                <div class="confirm-buttons">
+                    <button class="c-btn btn-cancel" onclick="closeModal('modal-discord-auth')" data-i18n="cancel">Cancelar</button>
+                    <button class="c-btn btn-accept" onclick="showAccountSelection()" data-i18n="linkDiscordBtn">Vincular</button>
+                </div>
+            </div>
+
+            <div id="auth-step-2" class="hidden">
+                <h3 data-i18n="chooseMinecraftAccount">Selecciona tu cuenta</h3>
+                <p data-i18n="offlinePrompt">Introduce un nombre de usuario</p>
+                <div id="auth-account-list" class="mini-account-selector"></div>
+            </div>
+
+            <div id="auth-step-3" class="hidden">
+                <div class="success-checkmark"><i class="fa-solid fa-circle-check"></i></div>
+                <h3 data-i18n="linkSuccess">¡Vinculación Exitosa!</h3>
+                <p data-i18n="linkSuccessDesc">Ahora tu cuenta de Minecraft está vinculada con Discord.</p>
+                <div id="display-final-tag" class="user-tag-badge"></div>
+                <button class="c-btn btn-accept" style="width: 100%; margin-top: 15px;" onclick="finalizeAuth()" data-i18n="finishLink">LISTO</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="friend-profile-modal" class="modal-overlay hidden">
+        <div class="confirm-card profile-card-full" style="max-width: 650px; width: 95%;">
+            <button class="screenshot-modal-close" onclick="closeFriendProfile()">×</button>
+            <div class="profile-layout">
+                <div class="profile-left">
+                    <img id="fp-avatar" src="" alt="Avatar de amigo">
+                    <h3 id="fp-name" style="margin-top: 10px; color: white;"></h3>
+                    <p id="fp-status" style="font-size: 0.9rem; color: #c7d8eb; margin-top: 5px;"></p>
+                </div>
+
+                <div class="profile-right">
+                    <h4 style="color: var(--accent-light); margin-bottom: 10px;"><i class="fa-solid fa-server"></i> Top Servidores</h4>
+                    <ul id="fp-servers" class="top-servers-list"></ul>
+
+                    <h4 style="color: var(--accent-light); margin-bottom: 10px;"><i class="fa-solid fa-image"></i> Captura Favorita</h4>
+                    <div class="protected-img-container">
+                        <img id="fp-capture" src="" alt="Captura favorita" oncontextmenu="return false;" ondragstart="return false;">
+                        <div class="protected-watermark">
+                            <i class="fa-solid fa-lock"></i> Protegida
+                        </div>
+                    </div>
+
+                    <div class="transfer-actions">
+                        <button class="btn-primary" style="flex: 1;" onclick="requestTransfer('ip')"><i class="fa-solid fa-share-from-square"></i> Transferir IP</button>
+                        <button class="btn-secondary" style="flex: 1;" onclick="requestTransfer('capture')"><i class="fa-solid fa-camera"></i> Enviar Captura</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="update-notification" class="update-notification hidden" aria-live="polite">
+        <div class="update-note-header">
+            <div class="update-note-icon"><i class="fa-solid fa-cloud-arrow-down"></i></div>
+            <div>
+                <strong>Actualizaciones</strong>
+                <p id="update-message">Buscando actualizaciones...</p>
+            </div>
+        </div>
+        <div id="update-progress" class="update-progress hidden">
+            <div id="update-progress-fill" class="update-progress-fill"></div>
+        </div>
+        <div class="update-note-actions">
+            <button id="update-close-button" class="btn-secondary" type="button">Cerrar</button>
+            <button id="update-install-button" class="btn-primary hidden" type="button">
+                <i class="fa-solid fa-rotate-right"></i> Reiniciar e instalar
+            </button>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script>
+        // Pequeño script para cambiar pantallas si no tienes tu renderer.js a mano
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+    </script>
+    <script src="renderer.js"></script>
+</body>
+</html>
