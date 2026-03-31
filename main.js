@@ -67,11 +67,11 @@ function setupAutoUpdater() {
     if (autoUpdaterConfigured) return;
     autoUpdaterConfigured = true;
 
+    autoUpdater.logger = null; // Silenciar logs técnicos
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
     autoUpdater.on('checking-for-update', () => {
-        console.log('Buscando actualizaciones...');
         sendToRenderer('update-status', {
             state: 'checking',
             message: 'Buscando actualizaciones...'
@@ -79,7 +79,6 @@ function setupAutoUpdater() {
     });
 
     autoUpdater.on('update-available', (info) => {
-        console.log('Actualización disponible:', info?.version || 'sin versión');
         sendToRenderer('update-status', {
             state: 'available',
             version: info?.version || '',
@@ -97,7 +96,6 @@ function setupAutoUpdater() {
     });
 
     autoUpdater.on('update-not-available', (info) => {
-        console.log('No hay actualizaciones disponibles.');
         sendToRenderer('update-status', {
             state: 'none',
             version: info?.version || '',
@@ -106,7 +104,6 @@ function setupAutoUpdater() {
     });
 
     autoUpdater.on('update-downloaded', (info) => {
-        console.log('Actualización descargada y lista para instalar.');
         sendToRenderer('update-status', {
             state: 'downloaded',
             version: info?.version || '',
@@ -115,7 +112,6 @@ function setupAutoUpdater() {
     });
 
     autoUpdater.on('error', (error) => {
-        console.warn('Error en autoUpdater:', error?.message || error);
         sendToRenderer('update-status', {
             state: 'error',
             message: `No se pudo comprobar la actualización: ${error?.message || 'Error desconocido'}`
