@@ -114,16 +114,17 @@
         </aside>
 
         <section class="main-content">
-            <header class="content-header">
-                <div class="header-top">
-                    <h1 id="welcome-msg">¡Bienvenido a Azure Launcher!</h1>
-                    <div id="status-bar" class="status-badge">
-                        <i class="fa-solid fa-earth-americas"></i> <span id="country-text">Cargando...</span> 
-                        <span class="separator">|</span>
-                        <i class="fa-solid fa-clock"></i> <span id="time-text">Cargando...</span>
+            <div class="content-scroll-area">
+                <header class="content-header">
+                    <div class="header-top">
+                        <h1 id="welcome-msg">¡Bienvenido a Azure Launcher!</h1>
+                        <div id="status-bar" class="status-badge">
+                            <i class="fa-solid fa-earth-americas"></i> <span id="country-text">Cargando...</span> 
+                            <span class="separator">|</span>
+                            <i class="fa-solid fa-clock"></i> <span id="time-text">Cargando...</span>
+                        </div>
                     </div>
-                </div>
-                <div class="section-tabs">
+                    <div class="section-tabs">
                     <button class="tab-btn" onclick="showSection('play')"><i class="fa-solid fa-gamepad"></i> <span data-i18n="playTab">Jugar</span></button>
                     <button class="tab-btn" onclick="showSection('screenshots')"><i class="fa-solid fa-camera-retro"></i> <span data-i18n="screenshotsTab">Capturas</span></button>
                     <button class="tab-btn" onclick="showSection('servers')"><i class="fa-solid fa-server"></i> <span data-i18n="serversTab">Servidores</span></button>
@@ -216,6 +217,11 @@
                     <button id="btn-browse-java" class="btn-secondary" style="padding: 0 15px;">🔍 Buscar</button>
                 </div>
                 <p id="java-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
+            </div>
+            <div class="setting-group" style="margin-top: 15px;">
+                <label for="ram-input">Memoria RAM asignada (GB):</label>
+                <input type="number" id="ram-input" value="4" min="1" max="16" class="search-input" style="width: 100%; margin-top: 5px;">
+                <p id="ram-status" class="java-status">Por defecto: 4GB</p>
             </div>
         </div>
     </div>
@@ -371,7 +377,77 @@
         </div>
     </div>
 
+    <div id="edit-profile-modal" class="modal hidden">
+        <div class="modal-content glass-panel" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-gear"></i> Editar Versión</h3>
+                <button class="close-modal-btn" onclick="closeEditModal()">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="modal-body form-group">
+                <label for="edit-alias-input">Nombre a mostrar (Alias):</label>
+                <input type="text" id="edit-alias-input" placeholder="Ej: Mi Survival Favorito" class="azure-input">
+
+                <label for="edit-version-input" style="margin-top: 15px;">Versión de Minecraft:</label>
+                <input type="text" id="edit-version-input" placeholder="Ej: 1.20.1" class="azure-input">
+                <small style="color: #9BA8AB; display: block; margin-top: 5px; font-size: 0.85em;">
+                    El launcher buscará y descargará esta versión automáticamente.
+                </small>
+            </div>
+            <div class="modal-footer" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn-secondary" onclick="closeEditModal()">Cancelar</button>
+                <button class="btn-primary" onclick="saveEditedProfile()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast-container" class="toast-container"></div>
+
+    <div id="sk-modal" class="sk-overlay hidden">
+        <div class="sk-window">
+            <div class="sk-header">
+                <span id="sk-modal-title">Nueva Instalación</span>
+                <button class="sk-close-x" onclick="closeSkModal()">×</button>
+            </div>
+            
+            <div class="sk-body">
+                <div class="sk-group">
+                    <label>Nombre</label>
+                    <input type="text" id="sk-input-name" placeholder="Ej: Mi Mundo 1.20">
+                </div>
+
+                <div class="sk-group">
+                    <label>Versión</label>
+                    <select id="sk-select-version"></select>
+                </div>
+            </div>
+
+            <div class="sk-footer">
+                <button id="sk-delete-btn" class="sk-btn sk-btn-red hidden" onclick="deleteProfile()">Eliminar</button>
+                <div class="sk-actions">
+                    <button class="sk-btn sk-btn-link" onclick="closeSkModal()">Cancelar</button>
+                    <button class="sk-btn sk-btn-blue" onclick="saveProfile()">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="launch-screen" class="launch-overlay hidden">
+        <div class="launch-content">
+            <img src="Azure-Launcher.png" class="launch-logo" alt="Logo">
+            <div class="launch-text-group">
+                <span class="launch-title">Azure Launcher</span>
+                <span id="launch-status" class="launch-subtitle">Preparando motores...</span>
+            </div>
+
+            <div class="launch-bar-container">
+                <div id="launch-bar-fill" class="launch-bar-fill"></div>
+            </div>
+
+            <p class="launch-phrase">Cargando Minecraft para que inicies tu aventura...</p>
+        </div>
+    </div>
 
     <script>
         // Pequeño script para cambiar pantallas si no tienes tu renderer.js a mano

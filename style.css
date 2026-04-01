@@ -235,9 +235,8 @@ body {
     align-items: center;
     justify-content: space-between;
     padding-left: 14px;
-    background: rgba(2, 11, 22, 0.92);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(10px);
+    background: #020b16;
+    border-bottom: 1px solid #0a1a31;
     z-index: 12000;
     -webkit-app-region: drag;
 }
@@ -1258,14 +1257,38 @@ body {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    min-height: 0; /* Para que el scroll interno funcione */
+}
+
+.versions-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;
+    gap: 10px;
+}
+
+.play-zone {
+    flex-shrink: 0;
+    z-index: 1;
 }
 
 .main-content {
     flex: 1;
     height: calc(100vh - var(--titlebar-height));
     padding: 20px 25px;
-    overflow-y: auto;
+    overflow-y: hidden;
+    display: flex;
+    flex-direction: column;
 }
+
+.news-container {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
 
 /* Iconos del Menú Lateral */
 .menu button i {
@@ -2048,4 +2071,287 @@ body {
 .btn-gear:hover {
     background: rgba(255, 255, 255, 0.2);
     color: white;
+}
+
+/* Contenedor principal del modal SKLauncher */
+.sk-overlay {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: none;
+    z-index: 20000;
+}
+
+.sk-window {
+    background: #171a1d;
+    border: 1px solid #3a4043;
+    border-radius: 7px;
+    width: min(460px, calc(100vw - 30px));
+    color: #e8e6e3;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.65);
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.sk-header {
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(180deg, #20272d 0%, #191f24 100%);
+    border-bottom: 1px solid #30373b;
+    color: #f5f7fa;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.sk-close-x {
+    background: transparent;
+    border: none;
+    color: #a0a8b3;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.sk-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.sk-group label {
+    color: #aebac8;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.sk-group input,
+.sk-group select {
+    width: 100%;
+    padding: 10px;
+    background: #1f2428;
+    border: 1px solid #32383e;
+    border-radius: 5px;
+    color: #edf1f8;
+    outline: none;
+}
+
+.sk-body select:focus,
+.sk-body input:focus {
+    border-color: #4ecdc4;
+    box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.2);
+}
+
+.sk-footer {
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid #30373b;
+    background: #1e2429;
+}
+
+.sk-btn {
+    border: 1px solid #3a4044;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 0.86rem;
+    cursor: pointer;
+    transition: 0.15s ease;
+}
+
+.sk-btn:hover {
+    filter: brightness(1.08);
+}
+
+.sk-btn-blue {
+    background: #0f63a7;
+    color: #fff;
+    border-color: #0c5a97;
+}
+
+.sk-btn-link {
+    background: #30383f;
+    color: #c4cdd6;
+}
+
+.sk-btn-red {
+    background: #b62a2e;
+    color: #fff;
+    border-color: #8e2428;
+}
+
+.version-item {
+    background: #1d2226;
+    border: 1px solid #30363a;
+    padding: 11px 14px;
+    margin-bottom: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 6px;
+}
+
+.version-item:hover {
+    background: #262b31;
+}
+
+.version-item {
+    background: #1c1e20;
+    border: 1px solid #313639;
+    padding: 10px 15px;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 4px;
+}
+
+.version-item:hover { background: #242729; }
+
+/* Pantalla de Carga de Lanzamiento */
+.launch-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: #0b0f14;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    color: white;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.launch-content {
+    text-align: center;
+    width: 400px;
+}
+
+.launch-logo {
+    width: 80px;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 0 10px rgba(0, 110, 219, 0.4));
+}
+
+.launch-text-group { margin-bottom: 30px; }
+
+.launch-title {
+    display: block;
+    font-size: 24px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.launch-subtitle {
+    font-size: 14px;
+    color: #0078d4;
+    font-weight: 500;
+}
+
+/* Barra de Carga */
+.launch-bar-container {
+    width: 100%;
+    height: 6px;
+    background: #1e2329;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 15px;
+}
+
+.launch-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: #0078d4;
+    box-shadow: 0 0 10px rgba(0, 120, 212, 0.7);
+    transition: width 0.3s ease;
+}
+
+.launch-phrase {
+    font-size: 13px;
+    color: #666;
+    font-style: italic;
+}
+
+.btn-gear-sk {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 18px;
+}
+
+.btn-gear-sk:hover { color: #3b82f6; }
+
+.modal-footer-sk {
+    padding: 15px 20px;
+    background: #0f172a;
+    display: flex;
+    justify-content: space-between;
+    border-radius: 0 0 8px 8px;
+}
+
+.btn-save-sk { background: #3b82f6; color: white; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; }
+.btn-cancel-sk { background: transparent; color: #9ca3af; border: none; cursor: pointer; margin-right: 10px; }
+.btn-danger-sk { background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }
+
+
+/* Estilos para los inputs del modal */
+.azure-input {
+    width: 100%;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-family: inherit;
+    outline: none;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+.azure-input:focus {
+    border-color: var(--accent-light);
+    box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5);
+}
+
+/* Botón de Eliminar (Rojo) */
+.btn-danger {
+    background: rgba(220, 53, 69, 0.2);
+    color: #ff4d4d;
+    border: 1px solid rgba(220, 53, 69, 0.5);
+    padding: 10px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-weight: bold;
+}
+
+.btn-danger:hover {
+    background: #dc3545;
+    color: white;
+}
+
+/* Ajuste para la tuerca en la lista (version-item) */
+.btn-tuerca {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.2em;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+    margin-left: auto;
+}
+
+.btn-tuerca:hover {
+    color: var(--accent-light);
+    background: rgba(255, 255, 255, 0.1);
+    transform: rotate(90deg);
 }

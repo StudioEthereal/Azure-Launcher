@@ -8,12 +8,124 @@ const http = require('http');
 const nbt = require('prismarine-nbt');
 const { getStatus } = require('mc-server-status');
 const RPC = require('discord-rpc');
+const { exec } = require('child_process');
 
 const launcher = new Client();
+
+// Agregar listeners globales para debug del core de Minecraft
+launcher.on('debug', (e) => console.log('[DEBUG CORE]:', e));
+launcher.on('data', (e) => {
+    const message = String(e || '');
+    console.log('[DATA CORE]:', message);
+
+    if (!launchSessionFinished && /(Datafixer Bootstrap\/INFO|Render thread\/INFO|Done \()/i.test(message)) {
+        setLaunchFinished();
+    }
+});
+launcher.on('error', (e) => console.error('[ERROR CORE]:', e));
+launcher.on('close', (e) => console.log('[CERRADO CORE]: Código de salida', e));
+launcher.on('download-status', (e) => {
+    const percent = e.totalBytes > 0 ? Math.round((e.downloadedBytes / e.totalBytes) * 100) : 0;
+    console.log(`[DESCARGANDO]: ${e.type} - ${e.name} | Progreso: ${percent}%`);
+    sendToRenderer('launch-progress', {
+        type: e.type,
+        name: e.name,
+        percent
+    });
+});
+
 let mainWindow;
 let gameLogInterval = null;
-let lastLaunchUsername = 'Player';
+let lastLaunchUsername = 'Jugador';
+let currentVersion = '';
 let isLaunching = false;
+let launchSessionFinished = false;
+
+function limpiarNombreVersion(version) {
+    if (!version || typeof version !== 'string') return '';
+    return version.replace(/HD|Ultra|Standard|L7|I7|G5|F5/gi, '').replace(/\s+/g, ' ').trim();
+}
+
+function formatearDetallesVersion(version) {
+    const v = limpiarNombreVersion(version);
+    if (/optifine/i.test(version)) {
+        return `No se Optifine (${v})`;
+    }
+    return `Minecraft ${v}`;
+}
+
+function verificarVersionJava(javaPath) {
+    return new Promise((resolve) => {
+        const comando = `"${javaPath}" -version`;
+        exec(comando, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error ejecutando ${comando}:`, error.message);
+                resolve(null);
+                return;
+            }
+
+            const output = stderr || stdout;
+            const match = output.match(/version "(\d+)\.(\d+)\.(\d+)"/);
+            if (match) {
+                const major = parseInt(match[1]);
+                const minor = parseInt(match[2]);
+                console.log(`Java detectado: ${major}.${minor}.${match[3]} en ${javaPath}`);
+                resolve({ major, minor, full: `${major}.${minor}.${match[3]}` });
+            } else {
+                console.warn(`No se pudo parsear versión de Java: ${output}`);
+                resolve(null);
+            }
+        });
+    });
+}
+
+function limpiarCacheMinecraft(version = null) {
+    const root = rootPath; // Usar rootPath consistente
+    const librariesPath = path.join(root, 'libraries');
+    const versionsPath = path.join(root, 'versions');
+    const assetsIndexesPath = path.join(root, 'assets', 'indexes');
+
+    try {
+        if (fs.existsSync(librariesPath)) {
+            console.log('Limpiando libraries...');
+            fs.rmSync(librariesPath, { recursive: true, force: true });
+        }
+
+        if (fs.existsSync(assetsIndexesPath)) {
+            console.log('Limpiando índices de assets...');
+            fs.rmSync(assetsIndexesPath, { recursive: true, force: true });
+        }
+
+        if (version && fs.existsSync(path.join(versionsPath, version))) {
+            console.log(`Limpiando versión ${version}...`);
+            fs.rmSync(path.join(versionsPath, version), { recursive: true, force: true });
+        }
+
+        console.log('Cache limpiado exitosamente.');
+        return true;
+    } catch (error) {
+        console.error('Error limpiando cache:', error);
+        return false;
+    }
+}
+
+// variables globales para la presencia claramente controladas
+let currentLaunchVars = { username: 'Jugador', version: '' };
+
+function updateMinecraftPresence(status, ip = null) {
+    if (!rpcReady || !rpcClient) return;
+
+    const versionTexto = formatearDetallesVersion(currentLaunchVars.version || 'Desconocida');
+    const estadoActual = ip ? `Multiplayer: ${ip}` : 'Menu';
+
+    setDiscordActivity({
+        details: `Jugando a ${versionTexto}`,
+        state: estadoActual,
+        largeImageKey: 'azure_logo',
+        largeImageText: `Usuario: ${currentLaunchVars.username || 'Jugador'}`
+    });
+}
+
 let rpcClient = null;
 let rpcReady = false;
 let discordAuthServer = null;
@@ -64,6 +176,19 @@ let autoUpdaterConfigured = false;
 function sendToRenderer(channel, payload = {}) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.webContents.send(channel, payload);
+}
+
+function setLaunchFinished() {
+    if (launchSessionFinished) return;
+    launchSessionFinished = true;
+    sendToRenderer('launch-finished');
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        setTimeout(() => {
+            mainWindow.hide();
+            // app.quit(); // descomenta para cerrar el launcher por completo
+        }, 700);
+    }
 }
 
 function setupAutoUpdater() {
@@ -124,26 +249,30 @@ function setupAutoUpdater() {
 
 RPC.register(DISCORD_CLIENT_ID);
 
-async function setDiscordActivity({ user = 'Invitado', version = '1.20.4', status = 'En el menú' } = {}) {
-    if (!rpcClient || !rpcReady) return;
-
-    const safeUser = String(user || lastLaunchUsername || 'Invitado').trim() || 'Invitado';
-    const safeVersion = String(version || '1.20.4').trim() || '1.20.4';
-    const safeStatus = String(status || 'En el menú').trim() || 'En el menú';
-
+function setDiscordActivity(data = {}) {
     try {
-        await rpcClient.setActivity({
-            details: `Usuario: ${safeUser}`,
-            state: safeStatus === 'Jugando'
-                ? `Jugando Minecraft ${safeVersion}`
-                : `${safeStatus} · ${safeVersion}`,
-            startTimestamp: rpcStartTime,
-            largeImageKey: 'logo_main',
-            largeImageText: 'Azure Launcher',
-            instance: false
+        if (!rpcReady || !rpcClient) return;
+
+        if (data.user) {
+            const username = String(data.user || '').trim();
+            if (username) {
+                currentLaunchVars.username = username;
+                lastLaunchUsername = username;
+            }
+        }
+
+        const usernameDisplayed = currentLaunchVars.username || 'Jugador';
+
+        rpcClient.setActivity({
+            details: data.details || 'Navegando',
+            state: data.state || `Usuario: ${usernameDisplayed}`,
+            startTimestamp: data.startTimestamp || rpcStartTime,
+            largeImageKey: data.largeImageKey || 'azure_logo',
+            largeImageText: data.largeImageText || `Usuario: ${usernameDisplayed}`,
+            instance: false,
         });
     } catch (error) {
-        console.warn('No se pudo actualizar Discord RPC:', error.message);
+        console.error('Error en Discord RPC:', error.message);
     }
 }
 
@@ -153,7 +282,10 @@ function initDiscordRpc() {
     rpcClient.on('ready', () => {
         rpcReady = true;
         console.log('Discord RPC activado');
-        setDiscordActivity();
+        setDiscordActivity({
+            details: 'Navegando en los menús',
+            state: `Usuario: ${currentLaunchVars.username || 'Jugador'}`
+        });
     });
 
     rpcClient.on('disconnected', () => {
@@ -515,6 +647,22 @@ ipcMain.handle('get-server-status', async (_event, server) => {
     }
 });
 
+// ------------ NUEVO: Obtener versiones locales de Minecraft (desde .minecraft/versions) ----
+ipcMain.handle('get-local-versions', () => {
+    const dotMinecraft = path.join(os.homedir(), 'AppData', 'Roaming', '.minecraft', 'versions');
+    if (!fs.existsSync(dotMinecraft)) return [];
+
+    try {
+        return fs.readdirSync(dotMinecraft).filter((folder) => {
+            const jsonPath = path.join(dotMinecraft, folder, `${folder}.json`);
+            return fs.existsSync(jsonPath);
+        });
+    } catch (err) {
+        console.error('Error leyendo versiones locales:', err);
+        return [];
+    }
+});
+
 // ------------ NUEVO: Obtener versiones instaladas de Minecraft ----------------
 ipcMain.handle('get-installed-versions', () => {
     const versionsPath = path.join(rootPath, 'versions');
@@ -547,6 +695,10 @@ ipcMain.handle('get-installed-versions', () => {
     }
 });
 
+ipcMain.handle('clear-cache', async (_event, version = null) => {
+    return limpiarCacheMinecraft(version);
+});
+
 ipcMain.handle('get-window-state', () => ({
     isMaximized: mainWindow ? mainWindow.isMaximized() : false
 }));
@@ -556,10 +708,19 @@ ipcMain.on('update-rpc', (_event, data = {}) => {
 });
 
 ipcMain.on('update-discord', (_event, args = {}) => {
+    const username = String(args.username || '').trim();
+    if (username) {
+        currentLaunchVars.username = username;
+        lastLaunchUsername = username;
+    }
+
+    const status = String(args.status || 'En el menú').trim();
+    const version = String(args.version || 'Menú Principal').trim();
+
     setDiscordActivity({
-        user: args.username || 'Invitado',
-        status: args.status || 'En el menú',
-        version: args.version || 'Menú Principal'
+        details: `Jugando a ${version}`,
+        state: `Usuario: ${currentLaunchVars.username || 'Jugador'} - ${status}`,
+        largeImageText: `Usuario: ${currentLaunchVars.username || 'Jugador'}`
     });
 });
 
@@ -579,128 +740,161 @@ ipcMain.on('restart_app', () => {
     autoUpdater.quitAndInstall(false, true);
 });
 
+let gameLogs = ""; // Variable global para acumular los logs del juego
+
 // 2. Iniciar Juego
 ipcMain.on('launch-game', async (event, args) => {
     if (isLaunching) return;
     isLaunching = true;
 
     const selectedVersion = args.version;
-    const javaPath = args.customJavaPath || args.javaPath || "java";
+    const javaPath = args.javaPath;
 
-    // 1. Forzamos el nick. Si no viene en args, usamos el de la sesión o 'Player'
-    const finalUsername = args.username || lastLaunchUsername || 'Player';
+    // Aseguramos que la RAM sea un número limpio
+    const ramSize = parseInt(args.ram) || 4;
+
+    // Definimos el nombre final correctamente
+    const finalUsername = args.username || 'Jugador';
+    currentLaunchVars.username = finalUsername;
+    currentLaunchVars.version = args.version || '';
     lastLaunchUsername = finalUsername;
 
-    // 2. Creamos la autorización OFFLINE manual para evitar el error 401
-    // Esto engaña al juego para que no busque propiedades en los servidores de Mojang
-    const auth = {
-        access_token: '00000000000000000000000000000000', // Token dummy
-        client_token: '00000000000000000000000000000000',
-        uuid: '00000000-0000-0000-0000-000000000000',     // UUID genérico
-        name: finalUsername,
-        user_properties: '{}'
-    };
+    const versionPath = path.join(rootPath, 'versions', selectedVersion);
+    if (!fs.existsSync(versionPath)) {
+        const msg = `Versión ${selectedVersion || 'desconocida'} no está instalada. Revisa que esté en ${versionPath}.`;
+        console.warn(msg);
+        event.reply('status', `Error: ${msg}`);
+        isLaunching = false;
+        return;
+    }
 
-    // Determinar si es cliente modificado (OptiFine, Forge, etc.)
-    const isCustomClient = /optifine|forge|fabric|lunar|badlion|neon/i.test(selectedVersion);
+    const effectiveJavaPath = javaPath || 'java';
+    if (!fs.existsSync(effectiveJavaPath) && effectiveJavaPath.toLowerCase() !== 'java') {
+        const warning = `Ruta de JAVA no existe: ${effectiveJavaPath}. La ejecución puede fallar.`;
+        console.warn(warning);
+        event.reply('status', warning);
+    }
+
+    // Verificar versión de Java para versiones modernas
+    const versionNumber = parseFloat(selectedVersion.replace(/[^\d.]/g, ''));
+    if (versionNumber >= 1.17) { // 1.17+ requiere Java 16+, 1.20 requiere 17+
+        const javaVersion = await verificarVersionJava(effectiveJavaPath);
+        if (!javaVersion || javaVersion.major < 17) {
+            const msg = `Minecraft ${selectedVersion} requiere Java 17+. Detectado: ${javaVersion ? javaVersion.full : 'desconocido'}. Actualiza Java.`;
+            console.error(msg);
+            event.reply('status', `Error: ${msg}`);
+            isLaunching = false;
+            return;
+        }
+    }
+
+    event.reply('status', `Iniciando Minecraft ${selectedVersion} con ${finalUsername}...`);
+
+    const auth = Authenticator.getAuth(currentLaunchVars.username || finalUsername);
 
     let opts = {
-        authorization: auth,
+        clientPackage: null,
+        authorization: Authenticator.getAuth(currentLaunchVars.username || finalUsername),
         root: rootPath,
         version: {
-            number: selectedVersion,
-            type: isCustomClient ? 'custom' : 'release'
+            number: currentLaunchVars.version || selectedVersion,
+            type: 'release'
         },
-        javaPath: javaPath,
-        executablePath: javaPath,
-        skipAssetsCheck: true,
-        skipManifestCheck: true,
-        quickLaunch: true,
+        javaPath: effectiveJavaPath,
         memory: {
-            max: "3G",
+            max: `${ramSize}G`,
             min: "1G"
-        },
-        overrides: {
-            detached: false
         }
     };
 
-    if (mainWindow) {
-        mainWindow.hide();
-    }
+    // El launcher NO se oculta aún; debe permanecer visible mientras se preparan archivos y se descargan assets.
+    currentLaunchVars.username = finalUsername;
+    currentLaunchVars.version = selectedVersion;
 
-    const gameStartTime = Date.now();
-    if (typeof setDiscordActivity === 'function') {
-        setDiscordActivity({
-            details: `Minecraft ${selectedVersion}`,
-            state: 'Iniciando juego...',
-            startTimestamp: gameStartTime,
-            largeImageKey: 'azure_logo',
-            largeImageText: 'Azure Launcher'
-        });
-    }
+    const versionLimpia = formatearDetallesVersion(selectedVersion);
+
+    updateMinecraftPresence('Menu');
+
+    // Reiniciar log de juego antes de lanzar
+    gameLogs = "";
 
     try {
-        console.log(`Lanzando para ${finalUsername}...`);
-        lastLaunchUsername = finalUsername;
-        if (typeof setDiscordActivity === 'function') {
-            setDiscordActivity({
-                user: finalUsername,
-                version: selectedVersion,
-                status: 'Jugando'
-            });
+        console.log(`Intentando lanzar ${selectedVersion}...`);
+        const handler = await launcher.launch(opts);
+
+        if (!handler) {
+            throw new Error('No se pudo iniciar el proceso de Minecraft (handler nulo)');
         }
-        await launcher.launch(opts);
 
-        launcher.on('debug', (e) => console.log(e));
-        launcher.on('data', (e) => console.log(e));
+        handler.on('debug', (data) => {
+            const line = `[DEBUG] ${String(data)}`;
+            console.log(line);
+            gameLogs += line + '\n';
+        });
 
-        event.reply('status', '¡Juego Iniciado!');
+        handler.on('error', (error) => {
+            const errorMsg = `Minecraft error: ${error?.message || error}`;
+            console.error(errorMsg);
+            gameLogs += `[ERROR] ${errorMsg}\n`;
+            event.reply('status', `Error: ${errorMsg}`);
+            sendToRenderer('launch-error', { message: errorMsg });
+            isLaunching = false;
+        });
 
-        const logPath = path.join(opts.root, 'logs', 'latest.log');
-        if (gameLogInterval) {
-            clearInterval(gameLogInterval);
-        }
-        gameLogInterval = setInterval(() => {
-            if (!fs.existsSync(logPath)) return;
-            try {
-                const content = fs.readFileSync(logPath, 'utf-8');
-                const lines = content.split('\n').slice(-30);
-                let gameState = 'En el menú principal';
+        let launchFinishedSent = false;
 
-                for (let line of lines) {
-                    if (line.includes('Connecting to')) {
-                        const ip = line.split('Connecting to ')[1]?.split(',')[0]?.trim();
-                        if (ip) gameState = `Jugando en: ${ip}`;
-                    } else if (line.includes('Integrated server started') || line.includes('Saving chunks for level')) {
-                        gameState = 'Mundo de un jugador';
-                    }
-                }
+        handler.on('data', (raw) => {
+            const line = String(raw || '');
+            console.log(line);
+            gameLogs += line + '\n';
 
-                if (typeof setDiscordActivity === 'function') {
-                    setDiscordActivity({
-                        details: `Minecraft ${selectedVersion}`,
-                        state: gameState,
-                        startTimestamp: gameStartTime,
-                        largeImageKey: 'azure_logo',
-                        largeImageText: 'Azure Launcher'
-                    });
-                }
-            } catch (err) {
-                // Ignorar bloqueos temporales del archivo
+            if (!launchFinishedSent && /(Datafixer Bootstrap\/INFO|Render thread\/INFO|Done \()/i.test(line)) {
+                launchFinishedSent = true;
+                setLaunchFinished();
             }
-        }, 5000);
+
+            if (line.includes('Connecting to')) {
+                const match = line.match(/Connecting to ([^,]+)/);
+                if (match && match[1]) {
+                    const serverIP = match[1].trim();
+                    updateMinecraftPresence('Multiplayer', serverIP);
+                }
+            } else if (line.includes('Stopping!') || line.includes('Saving chunks for level') || line.includes('Disconnected') || line.includes('Leaving level')) {
+                updateMinecraftPresence('Menu');
+            }
+        });
+
+        handler.on('close', (code) => {
+            isLaunching = false;
+            currentLaunchVars.version = selectedVersion;
+            currentLaunchVars.username = finalUsername;
+            updateMinecraftPresence('Menu');
+            event.reply('status', `Minecraft cerrado (código ${code})`);
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.show();
+            }
+        });
+
+        event.reply('status', '¡Lanzando Minecraft!');
 
     } catch (error) {
-        console.error('Error al lanzar:', error);
-        isLaunching = false; // Si falla, permitimos intentar de nuevo
-        if (mainWindow) mainWindow.show();
-        event.reply('status', 'Error al iniciar el juego: ' + error.message);
+        console.error("FALLO CRÍTICO AL LANZAR:", error);
+        isLaunching = false; // <--- ESTO DESBLOQUEA LOS BOTONES SI FALLA
+        event.reply('status', 'Error: ' + error.message);
+        sendToRenderer('launch-error', { message: error.message });
     }
 });
 
-launcher.on('close', () => {
-    console.log('El juego se ha cerrado, restaurando el launcher...');
+ipcMain.on('close-launcher-after-start', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+        // app.quit(); // descomentar si quieres cerrar completamente el proceso del launcher
+    }
+});
+
+launcher.on('close', (code) => {
+    console.log('Juego cerrado con código:', code);
     isLaunching = false; // Resetear el estado de lanzamiento
 
     if (gameLogInterval) {
@@ -710,17 +904,37 @@ launcher.on('close', () => {
 
     if (mainWindow) {
         mainWindow.show();
+
+        if (code !== 0) {
+            const summary = gameLogs.split('\n').slice(-15).join('\n');
+            mainWindow.webContents.send('game-crash', {
+                code: code,
+                logs: summary
+            });
+        } else {
+            mainWindow.webContents.send('status', 'Juego cerrado correctamente.');
+        }
     }
 
-    if (typeof setDiscordActivity === 'function') {
-        setDiscordActivity({
-            details: 'Navegando en los menús',
-            state: `Usuario: ${lastLaunchUsername || 'Player'}`,
-            startTimestamp: Date.now(),
-            largeImageKey: 'azure_logo',
-            largeImageText: 'Azure Launcher'
-        });
-    }
+    // Actualizamos Discord al cerrar con el nombre correcto
+    setDiscordActivity({
+        details: 'Navegando en los menús',
+        state: `Usuario: ${currentLaunchVars.username || 'Jugador'}`,
+        largeImageKey: 'azure_logo'
+    });
+});
+
+// --- AÑADE ESTE NUEVO LISTENER PARA EL NOMBRE EN TIEMPO REAL ---
+ipcMain.on('update-username', (event, newUsername) => {
+    const user = String(newUsername || 'Jugador').trim() || 'Jugador';
+    currentLaunchVars.username = user;
+    lastLaunchUsername = user;
+
+    setDiscordActivity({
+        details: 'En el Launcher',
+        state: `Usuario: ${currentLaunchVars.username}`,
+        largeImageText: `Usuario: ${currentLaunchVars.username}`
+    });
 });
 
 // Controles de ventana
