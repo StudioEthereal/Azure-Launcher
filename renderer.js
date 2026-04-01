@@ -1,6 +1,7 @@
 const { ipcRenderer, clipboard, nativeImage } = require('electron');
 const ipc = ipcRenderer;
 
+// --- VARIABLES GLOBALES ---
 let firebaseDb = null;
 let firebaseFns = null;
 let firebaseReady = false;
@@ -9,7 +10,9 @@ let activeFriendsIdentity = '';
 let friendsPresenceInterval = null;
 let cachedFriendsPresence = {};
 const DEFAULT_FRIEND_SERVERS = ['play.azuremc.net', 'mc.hypixel.net', 'survival.latam.com'];
-const FIREBASE_FRIENDS_CONFIG = {
+
+// --- CONFIGURACIÓN DE FIREBASE ---
+const FIREBASE_CONFIG = {
     apiKey: 'AIzaSyCrNo2X1qyL5fs-daXIPGZVsC7mqiJqVRU',
     authDomain: 'azurelauncher.firebaseapp.com',
     databaseURL: 'https://azurelauncher-default-rtdb.firebaseio.com',
@@ -19,17 +22,29 @@ const FIREBASE_FRIENDS_CONFIG = {
     appId: '1:77647179819:web:7ace2a6365cd06a657ba6e'
 };
 
+// Inicialización Segura
 try {
     const { initializeApp, getApps, getApp } = require('firebase/app');
     const { getDatabase, ref, set, onValue, remove, update, off } = require('firebase/database');
 
-    const firebaseAppInstance = getApps().length ? getApp() : initializeApp(FIREBASE_FRIENDS_CONFIG);
-    firebaseDb = getDatabase(firebaseAppInstance);
+    const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+    firebaseDb = getDatabase(app);
     firebaseFns = { ref, set, onValue, remove, update, off };
     firebaseReady = true;
-} catch (error) {
-    console.warn('Firebase no disponible en el renderer:', error?.message || error);
+
+    window.fbSet = set;
+    window.fbRef = ref;
+    window.fbOnValue = onValue;
+    window.fbRemove = remove;
+    window.fbUpdate = update;
+
+    console.log('✅ Firebase Cargado');
+} catch (e) {
+    console.error('❌ Error cargando Firebase:', e);
 }
+
+// Función para limpiar nombres (Firebase no acepta puntos o hashtags en las llaves)
+const clean = (tag) => String(tag || '').replace(/[.#$[\]]/g, '_');
 
 // Aplicar color guardado en localStorage (persistencia)
 const savedAccent = localStorage.getItem('azureAccentColor')
@@ -713,6 +728,8 @@ window.addEventListener('DOMContentLoaded', () => {
     loadVersionList();
     updateDiscordStatus('En el menú');
     startFriendsRealtimeSync();
+    actualizarTopUI();
+    escucharTransferencias();
 
     setTimeout(() => {
         const accounts = getStoredAccounts();
@@ -1583,6 +1600,37 @@ async function unlinkDiscordAccount() {
     }
 }
 
+async function eliminarCuentaYDesvincular() {
+    const confirm = await showConfirmModal(
+        'ELIMINAR CUENTA', 
+        'Esto borrará tu lista de amigos, tus estadísticas y nadie podrá volver a encontrarte. ¿Proceder?', 
+        'danger'
+    );
+
+    if (!confirm) return;
+
+    const myTag = localStorage.getItem('discord_user') || getLinkedIdentity();
+    if (myTag && firebaseReady && firebaseDb && firebaseFns) {
+        const myKey = clean(myTag);
+        try {
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `perfiles/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `amigos/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `solicitudes/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `presencia/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `transferencias/${myKey}`));
+
+            localStorage.clear();
+            showToast('Azure', 'Cuenta eliminada de la red.', 'info');
+            setTimeout(() => location.reload(), 2000);
+            return;
+        } catch (e) {
+            console.error('Error eliminando cuenta:', e);
+            showToast('Error', 'No se pudo completar el borrado.', 'error');
+        }
+    }
+    showToast('Error', 'No se pudo completar el borrado.', 'error');
+}
+
 function renderFriendsPanel() {
     const panel = document.getElementById('friends-panel');
     if (!panel) return;
@@ -2020,6 +2068,51 @@ function requestTransfer(type) {
     showToast(`Solicitud de captura enviada a ${friendTag}`);
 }
 
+// Transferencias a otros amigos usando Firebase
+async function enviarDatoAFriend(friendTag, tipo, contenido) {
+    if (!firebaseReady || !window.fbSet || !window.fbRef || !firebaseDb) {
+        showToast('Error', 'Firebase no está disponible', 'error');
+        return;
+    }
+
+    const myTag = localStorage.getItem('discord_user') || getLinkedIdentity();
+    const friendKey = clean(friendTag);
+
+    await window.fbSet(window.fbRef(firebaseDb, `transferencias/${friendKey}/${Date.now()}`), {
+        remitente: myTag || 'desconocido',
+        tipo,
+        dato: contenido,
+        timestamp: Date.now()
+    });
+
+    showToast('Enviado', `Enviando ${tipo} a ${friendTag}...`, 'success');
+}
+
+function escucharTransferencias() {
+    const myTag = localStorage.getItem('discord_user') || getLinkedIdentity();
+    if (!myTag || !firebaseReady || !window.fbOnValue || !window.fbRef || !firebaseDb) return;
+
+    const myKey = clean(myTag);
+    window.fbOnValue(window.fbRef(firebaseDb, `transferencias/${myKey}`), (snap) => {
+        const data = snap.val() || {};
+        const box = document.getElementById('transfer-notifications');
+        if (!box) return;
+
+        box.innerHTML = '';
+        Object.keys(data).forEach((id) => {
+            const item = data[id];
+            const card = document.createElement('div');
+            card.className = 'notif-card';
+            card.innerHTML = `
+                <span><b>${escapeHtml(item.remitente)}</b> te envió una ${escapeHtml(item.tipo)}</span>
+                <button onclick="aceptarTransferencia('${escapeHtml(id)}', '${escapeHtml(item.tipo)}', '${escapeHtml(item.dato)}')">✅</button>
+                <button onclick="rechazarTransferencia('${escapeHtml(id)}')">❌</button>
+            `;
+            box.appendChild(card);
+        });
+    });
+}
+
 // --- LÓGICA DE LA PANTALLA DE INICIO DE SESIÓN ---
 function renderLoginAccounts() {
     const container = document.getElementById('offline-account-list') || document.getElementById('login-account-list');
@@ -2274,7 +2367,9 @@ function updateDiscordStatus(status = 'En el menú') {
 function launch() {
     const user = document.getElementById('user-name') ? document.getElementById('user-name').innerText : 'JugadorAzure';
     const selectedVersion = document.getElementById('version-select')?.value || '1.20.4';
+    const serverIp = document.getElementById('server-ip')?.innerText || 'desconocido';
 
+    registrarEntradaServidor(serverIp);
     updateDiscordStatus('Jugando');
     ipc.send('launch-game', { username: user, version: selectedVersion });
 }
@@ -2748,33 +2843,53 @@ function applyLanguage() {
 
 // FUNCIONES PARA TOP SERVIDORES REALES
 function registrarEntradaServidor(ip) {
-    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
-    if (!stats[ip]) stats[ip] = { plays: 0, hidden: false };
-    stats[ip].plays += 1;
-    localStorage.setItem('azure_server_stats', JSON.stringify(stats));
+    let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
+    if (!stats[ip]) stats[ip] = { clics: 0, oculto: false };
+    stats[ip].clics += 1;
+    localStorage.setItem('azure_stats_servers', JSON.stringify(stats));
+    actualizarTopUI();
 }
 
-function toggleOcultarServidor(ip) {
-    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
-    if (!stats[ip]) stats[ip] = { plays: 0, hidden: false };
-    
-    stats[ip].hidden = !stats[ip].hidden;
-    localStorage.setItem('azure_server_stats', JSON.stringify(stats));
-    
-    const estado = stats[ip].hidden ? 'oculto' : 'visible';
-    showToast('Privacidad', `El servidor ${ip} ahora está ${estado}`, 'info');
-    
-    renderizarTopServidores(); // Actualiza la pantalla
+function actualizarTopUI() {
+    let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
+    const top3 = Object.keys(stats)
+        .map(ip => ({ ip, ...stats[ip] }))
+        .filter(s => !s.oculto)
+        .sort((a, b) => b.clics - a.clics)
+        .slice(0, 3);
+
+    const container = document.getElementById('top-servers-list');
+    if (!container) return;
+
+    container.innerHTML = top3.map((s, index) => `
+        <div class="top-server-item">
+            <span class="rank">#${index + 1}</span>
+            <span class="ip">${escapeHtml(s.ip)}</span>
+            <span class="count">${s.clics} entradas</span>
+            <button onclick="ocultarServidorDelTop('${escapeHtml(s.ip)}')" title="Ocultar de mi Top">
+                <i class="fa-solid fa-eye-slash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function ocultarServidorDelTop(ip) {
+    let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
+    if (stats[ip]) {
+        stats[ip].oculto = true;
+        localStorage.setItem('azure_stats_servers', JSON.stringify(stats));
+        actualizarTopUI();
+        showToast('Privacidad', 'Servidor ocultado del Top.', 'info');
+    }
 }
 
 function obtenerTopServidoresReales() {
-    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
-    
+    let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
     return Object.keys(stats)
-        .filter(ip => !stats[ip].hidden) // Filtra los que están ocultos
-        .map(ip => ({ ip: ip, plays: stats[ip].plays }))
-        .sort((a, b) => b.plays - a.plays) // Ordena de mayor a menor
-        .slice(0, 3); // Toma solo los 3 primeros
+        .filter(ip => !stats[ip].oculto)
+        .map(ip => ({ ip, clics: stats[ip].clics }))
+        .sort((a, b) => b.clics - a.clics)
+        .slice(0, 3);
 }
 
 // FUNCIONES PARA TRANSFERENCIAS
