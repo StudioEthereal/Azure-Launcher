@@ -11,6 +11,8 @@ let friendsPresenceInterval = null;
 let cachedFriendsPresence = {};
 const DEFAULT_FRIEND_SERVERS = ['play.azuremc.net', 'mc.hypixel.net', 'survival.latam.com'];
 
+let versionSeleccionada = ""; // Variable global para la versión elegida
+
 // --- CONFIGURACIÓN DE FIREBASE ---
 const FIREBASE_CONFIG = {
     apiKey: 'AIzaSyCrNo2X1qyL5fs-daXIPGZVsC7mqiJqVRU',
@@ -45,6 +47,37 @@ try {
 
 // Función para limpiar nombres (Firebase no acepta puntos o hashtags en las llaves)
 const clean = (tag) => String(tag || '').replace(/[.#$[\]]/g, '_');
+const cleanKey = clean;
+
+// Función para controlar la ventana (minimizar, maximizar, cerrar)
+function controlWindow(action) {
+    ipc.send('window-control', action);
+}
+
+// Esta función le dice a tus amigos qué estás haciendo
+async function updateMyPresence() {
+    const myTag = localStorage.getItem('discord_user') || getLinkedIdentity();
+    if (!myTag || !firebaseReady || !window.fbUpdate || !window.fbRef || !firebaseDb) return;
+
+    const myKey = clean(myTag);
+    const now = Date.now();
+
+    try {
+        await window.fbUpdate(window.fbRef(firebaseDb, `perfiles/${myKey}`), {
+            lastSeen: now,
+            status: 'online',
+            currentServer: localStorage.getItem('last_server') || 'Menú Principal'
+        });
+        console.log('📡 Presencia actualizada');
+    } catch (e) {
+        console.error('Error al actualizar presencia:', e);
+    }
+}
+
+// Configurar para que se actualice cada 30 segundos automáticamente
+setInterval(() => {
+    if (firebaseReady) updateMyPresence();
+}, 30000);
 
 // Aplicar color guardado en localStorage (persistencia)
 const savedAccent = localStorage.getItem('azureAccentColor')
@@ -244,15 +277,6 @@ function guessCountryOffline() {
 
 
 // Controles de ventana (requiere Electron)
-function controlWindow(action) {
-    if (action === 'close') {
-        window.close();
-    } else if (action === 'min') {
-        require('electron').ipcRenderer.send('window-control', 'min');
-    } else if (action === 'max') {
-        require('electron').ipcRenderer.send('window-control', 'max');
-    }
-}
 
 
 // --- NUEVA LÓGICA DE PALETA Y AJUSTES ---
@@ -726,6 +750,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     loadAccounts();
     loadVersionList();
+    loadInstalledVersions();
     updateDiscordStatus('En el menú');
     startFriendsRealtimeSync();
     actualizarTopUI();
@@ -1812,11 +1837,23 @@ async function processDiscordLink(selectedNick) {
 }
 
 function finalizeAuth() {
-    closeModal('modal-discord-auth');
-    startFriendsRealtimeSync();
-    renderFriendsPanel();
-    showSection('friends');
-    showToast(t('linkSuccess'));
+    const finalTag = document.getElementById('display-final-tag')?.innerText || '';
+    if (finalTag && finalTag !== '...') {
+        localStorage.setItem('discord_user', finalTag);
+        const nameElement = document.getElementById('user-name');
+        if (nameElement) nameElement.innerText = finalTag;
+        document.getElementById('auth-modal')?.classList.add('hidden');
+        showToast('Azure', '¡Cuenta vinculada!', 'success');
+
+        startFriendsRealtimeSync();
+        renderFriendsPanel();
+        showSection('friends');
+
+        if (firebaseReady) updateMyPresence();
+        return;
+    }
+
+    showToast('Error', 'Finaliza el vínculo del Discord para continuar.', 'error');
 }
 
 function sendFriendRequest() {
@@ -2216,6 +2253,33 @@ function loadVersionList() {
     container.innerHTML = versions.map(ver => `<div class="version-item">${ver}</div>`).join('');
 }
 
+// --- NUEVO: Cargar versiones reales instaladas en .minecraft/versions ---
+async function loadInstalledVersions() {
+    const versionSelect = document.getElementById('version-select');
+    if (!versionSelect) return;
+
+    try {
+        const versions = await ipc.invoke('get-installed-versions');
+
+        if (!Array.isArray(versions) || versions.length === 0) {
+            versionSelect.innerHTML = '<option value="">No hay versiones instaladas</option>';
+            return;
+        }
+
+        versionSelect.innerHTML = versions.sort().map((v) => 
+            `<option value="${v}">${v}</option>`
+        ).join('');
+
+        const ultimaVersion = localStorage.getItem('last_played_version');
+        if (ultimaVersion && versions.includes(ultimaVersion)) {
+            versionSelect.value = ultimaVersion;
+        }
+    } catch (error) {
+        console.error('Error al cargar versiones instaladas:', error);
+        versionSelect.innerHTML = '<option value="">Error al cargar versiones</option>';
+    }
+}
+
 function addVersion() {
     const version = prompt('Ingresa la versión de Minecraft (ej. 1.20.4):');
     if (!version || !version.trim()) return;
@@ -2331,6 +2395,7 @@ function loginOffline() {
 
     if (input) input.value = '';
     selectAccount(account, { closeModal: false, updateList: true });
+    ipc.send('update-discord', { username: name, status: 'En el menú', version: 'Menú Principal' });
     showScreen('screen-dashboard');
 }
 
@@ -2843,10 +2908,16 @@ function applyLanguage() {
 
 // FUNCIONES PARA TOP SERVIDORES REALES
 function registrarEntradaServidor(ip) {
+    if (!ip) return;
+
     let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
     if (!stats[ip]) stats[ip] = { clics: 0, oculto: false };
     stats[ip].clics += 1;
     localStorage.setItem('azure_stats_servers', JSON.stringify(stats));
+
+    localStorage.setItem('last_server', ip);
+    if (firebaseReady) updateMyPresence();
+
     actualizarTopUI();
 }
 
@@ -2990,4 +3061,222 @@ function requestTransfer(type) {
         // Lógica para enviar captura
         showToast('Transferencia', 'Función no implementada aún', 'info');
     }
+}
+
+// --- FUNCIONES DE VERSIONES ---
+async function loadInstalledVersions() {
+    const versionSelect = document.getElementById('version-select'); // Asegúrate que este ID existe en tu HTML
+    if (!versionSelect) return;
+
+    const versions = await ipc.invoke('get-installed-versions');
+    
+    if (versions.length === 0) {
+        versionSelect.innerHTML = '<option value="">No hay versiones instaladas</option>';
+    } else {
+        versionSelect.innerHTML = versions.map(v => 
+            `<option value="${v}">${v}</option>`
+        ).join('');
+    }
+}
+
+async function renderVersionsUI() {
+    const container = document.getElementById('versions-container');
+    if (!container) return;
+
+    const versiones = await ipc.invoke('get-installed-versions');
+    container.innerHTML = ''; // Limpiar
+
+    versiones.forEach(v => {
+        const div = document.createElement('div');
+        div.className = 'version-item';
+        // Buscamos si es Forge, Fabric u Optifine para poner el icono
+        let icon = 'fa-solid fa-cube'; // Default Minecraft
+        const lowerV = v.toLowerCase();
+        if (lowerV.includes('forge')) icon = 'fa-solid fa-hammer';
+        else if (lowerV.includes('fabric')) icon = 'fa-solid fa-scroll';
+        else if (lowerV.includes('optifine') || lowerV.includes('opti')) icon = 'fa-solid fa-wand-magic-sparkles';
+        else if (lowerV.includes('lunar')) icon = 'fa-solid fa-moon';
+        else if (lowerV.includes('badlion')) icon = 'fa-solid fa-shield';
+        else if (lowerV.includes('pvplounge')) icon = 'fa-solid fa-gamepad';
+        else if (lowerV.includes('labymod')) icon = 'fa-solid fa-flask';
+        // Si no tiene modloader específico, queda el cube
+
+        div.innerHTML = `
+            <i class="${icon}"></i>
+            <span>Minecraft ${v}</span>
+            <div class="version-actions">
+                <button onclick="configurarJavaVersion('${v}')" title="Configurar Java para esta versión" class="btn-gear">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        `;
+
+        // Al hacer clic en una versión de la lista (solo el span y el icono, no el botón)
+        div.addEventListener('click', (e) => {
+            // Si el clic fue en el botón de configuración, no seleccionar
+            if (e.target.closest('.btn-gear')) return;
+
+            // Quitar clase 'active' de otros
+            document.querySelectorAll('.version-item').forEach(el => el.classList.remove('active'));
+            // Añadir clase 'active' al seleccionado
+            div.classList.add('active');
+
+            // Guardar la versión y actualizar el botón principal
+            versionSeleccionada = v;
+            const playText = document.getElementById('play-button-text');
+            if (playText) playText.innerText = `JUGAR ${v}`;
+            showToast('Azure', `Versión ${v} seleccionada`, 'info');
+        });
+
+        container.appendChild(div);
+    });
+}
+
+async function configurarJavaVersion(versionId) {
+    const path = await ipc.invoke('select-java');
+    if (path) {
+        if (path.toLowerCase().includes('javaw.exe')) {
+            localStorage.setItem(`java_path_${versionId}`, path);
+            showToast(`Java para ${versionId} configurado correctamente`);
+        } else {
+            showToast('Error: Debes seleccionar el archivo javaw.exe');
+        }
+    }
+}
+
+function seleccionarYJugar(version) {
+    // Ya no se usa, ahora es onclick directo
+}
+
+function lanzarJuego() {
+    const username = localStorage.getItem('current_account') ? JSON.parse(localStorage.getItem('current_account')).name : 'Player';
+
+    if (!versionSeleccionada) {
+        showToast('Error', 'Por favor, selecciona una versión de la lista primero.', 'error');
+        return;
+    }
+
+    // Deshabilitar el botón inmediatamente para evitar doble clic
+    const btn = document.getElementById('btn-play-main');
+    if (btn) {
+        btn.disabled = true;
+        const text = document.getElementById('play-button-text');
+        if (text) text.innerText = 'INICIANDO...';
+    }
+
+    // 1. PRIORIDAD: ¿Tiene Java esta versión? Si no, ¿Tiene el global? Si no, "java"
+    const javaVersion = localStorage.getItem(`java_path_${versionSeleccionada}`);
+    const javaGlobal = localStorage.getItem('custom_java_path');
+    const finalJavaPath = javaVersion || javaGlobal || "java";
+
+    console.log(`Iniciando ${versionSeleccionada} con ${finalJavaPath}`);
+
+    // Enviar al main.js para iniciar con auth data
+    ipc.send('launch-game', {
+        username: username,
+        version: versionSeleccionada,
+        customJavaPath: finalJavaPath,
+        auth: null // Puede ser null si no hay sesión iniciada completa
+    });
+}
+
+// --- FUNCIONES DE AMIGOS ---
+async function aceptarSolicitud(remitenteTag) {
+    const myTag = localStorage.getItem('discord_user');
+    const myKey = cleanKey(myTag);
+    const friendKey = cleanKey(remitenteTag);
+
+    try {
+        // 1. Añadir a mi lista de amigos
+        await window.fbUpdate(window.fbRef(firebaseDb, `amigos/${myKey}/${friendKey}`), { tag: remitenteTag, status: 'online' });
+        // 2. Añadirme a su lista de amigos
+        await window.fbUpdate(window.fbRef(firebaseDb, `amigos/${friendKey}/${myKey}`), { tag: myTag, status: 'online' });
+        
+        // --- CRÍTICO: BORRAR LA SOLICITUD PARA QUE DESAPAREZCA ---
+        await window.fbRemove(window.fbRef(firebaseDb, `solicitudes/${myKey}/${friendKey}`));
+        
+        showToast('Azure', `¡Ahora eres amigo de ${remitenteTag}!`, 'success');
+    } catch (e) {
+        console.error("Error al aceptar:", e);
+    }
+}
+
+// --- FUNCIONES DE PRIVACIDAD ---
+async function setFavoriteCapture(url) {
+    const myTag = localStorage.getItem('discord_user');
+    if (!myTag) return;
+
+    await window.fbUpdate(window.fbRef(firebaseDb, `perfiles/${cleanKey(myTag)}`), {
+        favoriteCapture: url
+    });
+    showToast('Privacidad', 'Captura de perfil actualizada', 'success');
+}
+
+function toggleServerVisibility(ip) {
+    let stats = JSON.parse(localStorage.getItem('azure_server_stats') || '{}');
+    if (stats[ip]) {
+        stats[ip].hidden = !stats[ip].hidden;
+        localStorage.setItem('azure_server_stats', JSON.stringify(stats));
+        renderizarTopServers(); // Refrescar la lista
+    }
+}
+
+// --- INICIALIZACIÓN ---
+document.addEventListener('DOMContentLoaded', () => {
+    loadInstalledVersions();
+    renderVersionsUI();
+
+    // Evento del botón principal de jugar
+    const btnPlay = document.getElementById('btn-play-main');
+    if (btnPlay) {
+        btnPlay.addEventListener('click', lanzarJuego);
+    }
+
+    // Lógica del selector de Java
+    const btnBrowseJava = document.getElementById('btn-browse-java');
+    const javaInput = document.getElementById('java-path-input');
+    const javaStatus = document.getElementById('java-status-msg');
+
+    // Al cargar el launcher, mostrar la ruta guardada
+    const savedPath = localStorage.getItem('custom_java_path');
+    if (savedPath) {
+        javaInput.value = savedPath;
+        javaStatus.innerText = "✅ Java personalizado detectado";
+    } else {
+        javaStatus.innerText = "⚠️ Usando Java por defecto del sistema";
+    }
+
+    // Abrir el buscador de archivos
+    if (btnBrowseJava) {
+        btnBrowseJava.addEventListener('click', async () => {
+            const path = await ipc.invoke('select-java');
+            if (path) {
+                if (path.toLowerCase().includes('javaw.exe')) {
+                    javaInput.value = path;
+                    localStorage.setItem('custom_java_path', path);
+                    javaStatus.innerText = "✅ Ruta de Java actualizada correctamente";
+                    showToast('Ruta de Java guardada correctamente');
+                } else {
+                    showToast('Error: Debes seleccionar el archivo javaw.exe');
+                }
+            }
+        });
+    }
+});
+
+// --- FUNCIONES ADICIONALES ---
+async function finalizeAuth(userData) {
+    // Actualizar UI
+    // ... tu código para actualizar la UI
+
+    // Guardar discord_user
+    localStorage.setItem('discord_user', userData.tag || userData.username);
+
+    // Llamar a updateMyPresence
+    updateMyPresence();
+}
+
+async function registrarEntradaServidor(serverIp) {
+    localStorage.setItem('last_server', serverIp);
+    updateMyPresence();
 }

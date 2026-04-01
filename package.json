@@ -1,6 +1,6 @@
 {
   "name": "azure-launcher",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Azure Luncher",
   "main": "main.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "electron-updater": "^6.8.3",
     "firebase": "^12.11.0",
     "mc-server-status": "^2.0.2",
-    "minecraft-launcher-core": "^3.16.5",
+    "minecraft-launcher-core": "^3.18.2",
     "prismarine-nbt": "^2.0.0"
   },
   "devDependencies": {

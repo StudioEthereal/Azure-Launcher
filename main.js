@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { Client, Authenticator } = require('minecraft-launcher-core');
 const path = require('path');
@@ -11,6 +11,9 @@ const RPC = require('discord-rpc');
 
 const launcher = new Client();
 let mainWindow;
+let gameLogInterval = null;
+let lastLaunchUsername = 'Player';
+let isLaunching = false;
 let rpcClient = null;
 let rpcReady = false;
 let discordAuthServer = null;
@@ -49,7 +52,7 @@ const appData = process.env.APPDATA || (
         : path.join(os.homedir(), '.local', 'share')
 );
 
-const rootPath = path.join(appData, '.azure_launcher');
+const rootPath = path.join(appData, '.minecraft');
 const legacyMinecraftPath = path.join(appData, '.minecraft');
 const localServersFile = path.join(__dirname, 'servers.dat');
 const fallbackServers = [
@@ -124,7 +127,7 @@ RPC.register(DISCORD_CLIENT_ID);
 async function setDiscordActivity({ user = 'Invitado', version = '1.20.4', status = 'En el menú' } = {}) {
     if (!rpcClient || !rpcReady) return;
 
-    const safeUser = String(user || 'Invitado').trim() || 'Invitado';
+    const safeUser = String(user || lastLaunchUsername || 'Invitado').trim() || 'Invitado';
     const safeVersion = String(version || '1.20.4').trim() || '1.20.4';
     const safeStatus = String(status || 'En el menú').trim() || 'En el menú';
 
@@ -512,12 +515,52 @@ ipcMain.handle('get-server-status', async (_event, server) => {
     }
 });
 
+// ------------ NUEVO: Obtener versiones instaladas de Minecraft ----------------
+ipcMain.handle('get-installed-versions', () => {
+    const versionsPath = path.join(rootPath, 'versions');
+    if (!fs.existsSync(versionsPath)) return [];
+    
+    try {
+        let versions = fs.readdirSync(versionsPath).filter((folder) => {
+            const jsonPath = path.join(versionsPath, folder, `${folder}.json`);
+            return fs.existsSync(jsonPath);
+        });
+
+        versions.sort((a, b) => {
+            const cleanA = a.replace(/[^0-9.]/g, '');
+            const cleanB = b.replace(/[^0-9.]/g, '');
+            const pa = cleanA.split('.').map(Number);
+            const pb = cleanB.split('.').map(Number);
+            for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                const na = pa[i] || 0;
+                const nb = pb[i] || 0;
+                if (na > nb) return -1;
+                if (na < nb) return 1;
+            }
+            return 0;
+        });
+
+        return versions;
+    } catch (err) {
+        console.error('Error leyendo versiones:', err);
+        return [];
+    }
+});
+
 ipcMain.handle('get-window-state', () => ({
     isMaximized: mainWindow ? mainWindow.isMaximized() : false
 }));
 
 ipcMain.on('update-rpc', (_event, data = {}) => {
     setDiscordActivity(data);
+});
+
+ipcMain.on('update-discord', (_event, args = {}) => {
+    setDiscordActivity({
+        user: args.username || 'Invitado',
+        status: args.status || 'En el menú',
+        version: args.version || 'Menú Principal'
+    });
 });
 
 ipcMain.handle('start-discord-link', async () => {
@@ -538,27 +581,146 @@ ipcMain.on('restart_app', () => {
 
 // 2. Iniciar Juego
 ipcMain.on('launch-game', async (event, args) => {
-    const selectedVersion = args.version || '1.20.4';
-    const auth = Authenticator.getAuth(args.username);
-    const opts = {
-        clientPackage: null,
-        authorization: auth,
-        root: rootPath,
-        version: { number: selectedVersion, type: 'release' },
-        memory: { max: '4G', min: '2G' }
+    if (isLaunching) return;
+    isLaunching = true;
+
+    const selectedVersion = args.version;
+    const javaPath = args.customJavaPath || args.javaPath || "java";
+
+    // 1. Forzamos el nick. Si no viene en args, usamos el de la sesión o 'Player'
+    const finalUsername = args.username || lastLaunchUsername || 'Player';
+    lastLaunchUsername = finalUsername;
+
+    // 2. Creamos la autorización OFFLINE manual para evitar el error 401
+    // Esto engaña al juego para que no busque propiedades en los servidores de Mojang
+    const auth = {
+        access_token: '00000000000000000000000000000000', // Token dummy
+        client_token: '00000000000000000000000000000000',
+        uuid: '00000000-0000-0000-0000-000000000000',     // UUID genérico
+        name: finalUsername,
+        user_properties: '{}'
     };
 
-    setDiscordActivity({
-        user: args.username,
-        version: selectedVersion,
-        status: 'Jugando'
-    });
+    // Determinar si es cliente modificado (OptiFine, Forge, etc.)
+    const isCustomClient = /optifine|forge|fabric|lunar|badlion|neon/i.test(selectedVersion);
 
-    launcher.on('progress', (e) => event.reply('status', `Descargando: ${Math.round(e.task / e.total * 100)}%`));
-    launcher.on('debug', (e) => console.log(e));
+    let opts = {
+        authorization: auth,
+        root: rootPath,
+        version: {
+            number: selectedVersion,
+            type: isCustomClient ? 'custom' : 'release'
+        },
+        javaPath: javaPath,
+        executablePath: javaPath,
+        skipAssetsCheck: true,
+        skipManifestCheck: true,
+        quickLaunch: true,
+        memory: {
+            max: "3G",
+            min: "1G"
+        },
+        overrides: {
+            detached: false
+        }
+    };
 
-    await launcher.launch(opts);
-    event.reply('status', '¡Juego Iniciado!');
+    if (mainWindow) {
+        mainWindow.hide();
+    }
+
+    const gameStartTime = Date.now();
+    if (typeof setDiscordActivity === 'function') {
+        setDiscordActivity({
+            details: `Minecraft ${selectedVersion}`,
+            state: 'Iniciando juego...',
+            startTimestamp: gameStartTime,
+            largeImageKey: 'azure_logo',
+            largeImageText: 'Azure Launcher'
+        });
+    }
+
+    try {
+        console.log(`Lanzando para ${finalUsername}...`);
+        lastLaunchUsername = finalUsername;
+        if (typeof setDiscordActivity === 'function') {
+            setDiscordActivity({
+                user: finalUsername,
+                version: selectedVersion,
+                status: 'Jugando'
+            });
+        }
+        await launcher.launch(opts);
+
+        launcher.on('debug', (e) => console.log(e));
+        launcher.on('data', (e) => console.log(e));
+
+        event.reply('status', '¡Juego Iniciado!');
+
+        const logPath = path.join(opts.root, 'logs', 'latest.log');
+        if (gameLogInterval) {
+            clearInterval(gameLogInterval);
+        }
+        gameLogInterval = setInterval(() => {
+            if (!fs.existsSync(logPath)) return;
+            try {
+                const content = fs.readFileSync(logPath, 'utf-8');
+                const lines = content.split('\n').slice(-30);
+                let gameState = 'En el menú principal';
+
+                for (let line of lines) {
+                    if (line.includes('Connecting to')) {
+                        const ip = line.split('Connecting to ')[1]?.split(',')[0]?.trim();
+                        if (ip) gameState = `Jugando en: ${ip}`;
+                    } else if (line.includes('Integrated server started') || line.includes('Saving chunks for level')) {
+                        gameState = 'Mundo de un jugador';
+                    }
+                }
+
+                if (typeof setDiscordActivity === 'function') {
+                    setDiscordActivity({
+                        details: `Minecraft ${selectedVersion}`,
+                        state: gameState,
+                        startTimestamp: gameStartTime,
+                        largeImageKey: 'azure_logo',
+                        largeImageText: 'Azure Launcher'
+                    });
+                }
+            } catch (err) {
+                // Ignorar bloqueos temporales del archivo
+            }
+        }, 5000);
+
+    } catch (error) {
+        console.error('Error al lanzar:', error);
+        isLaunching = false; // Si falla, permitimos intentar de nuevo
+        if (mainWindow) mainWindow.show();
+        event.reply('status', 'Error al iniciar el juego: ' + error.message);
+    }
+});
+
+launcher.on('close', () => {
+    console.log('El juego se ha cerrado, restaurando el launcher...');
+    isLaunching = false; // Resetear el estado de lanzamiento
+
+    if (gameLogInterval) {
+        clearInterval(gameLogInterval);
+        gameLogInterval = null;
+    }
+
+    if (mainWindow) {
+        mainWindow.show();
+    }
+
+    if (typeof setDiscordActivity === 'function') {
+        setDiscordActivity({
+            details: 'Navegando en los menús',
+            state: `Usuario: ${lastLaunchUsername || 'Player'}`,
+            startTimestamp: Date.now(),
+            largeImageKey: 'azure_logo',
+            largeImageText: 'Azure Launcher'
+        });
+    }
 });
 
 // Controles de ventana
@@ -571,4 +733,18 @@ ipcMain.on('window-control', (e, action) => {
         if (mainWindow.isMaximized()) mainWindow.unmaximize();
         else mainWindow.maximize();
     }
+});
+
+// Listener para abrir el explorador de archivos y buscar javaw.exe
+ipcMain.handle('select-java', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Selecciona el ejecutable de Java (javaw.exe)',
+        properties: ['openFile'],
+        filters: [
+            { name: 'Ejecutables de Java', extensions: ['exe'] }
+        ]
+    });
+
+    if (canceled) return null;
+    return filePaths[0]; // Devuelve la ruta seleccionada
 });

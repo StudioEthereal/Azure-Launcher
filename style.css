@@ -1572,11 +1572,18 @@ body {
 }
 
 .versions-list {
-    max-height: 160px;
+    max-height: 180px;
     overflow-y: auto;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
+    padding-right: 5px;
 }
+
+.versions-list::-webkit-scrollbar { width: 6px; }
+.versions-list::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
+.versions-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+.versions-list::-webkit-scrollbar-thumb:hover { background: var(--accent-blue); }
 
 .versions-list p {
     font-size: 0.8rem;
@@ -1870,4 +1877,175 @@ body {
     font-size: 0.85rem;
     color: #b8d3ea;
     line-height: 1.4;
+}
+
+/* --- ESTILOS PARA VERSIONES CARDS --- */
+.versions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    padding: 10px;
+}
+
+.version-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: 0.3s;
+    cursor: pointer;
+}
+
+.version-card:hover {
+    background: rgba(var(--accent-rgb), 0.2);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+}
+
+.version-card.active {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.3);
+}
+
+.v-icon {
+    font-size: 20px;
+    color: var(--accent);
+}
+
+.v-name {
+    display: block;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.v-tag {
+    font-size: 10px;
+    opacity: 0.6;
+    text-transform: uppercase;
+}
+
+.v-play-btn {
+    margin-left: auto;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    color: white;
+    cursor: pointer;
+}
+
+/* Estilos para versiones */
+.versions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    padding: 10px;
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+.versions-grid::-webkit-scrollbar { width: 6px; }
+.versions-grid::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
+.versions-grid::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+.versions-grid::-webkit-scrollbar-thumb:hover { background: var(--accent-blue); }
+
+.version-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: 0.3s;
+    cursor: pointer;
+}
+
+.version-card:hover {
+    background: rgba(var(--accent-rgb), 0.2);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+}
+
+.version-card.active {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.3);
+}
+
+.v-icon {
+    font-size: 20px;
+    color: var(--accent);
+}
+
+.v-name {
+    display: block;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.v-tag {
+    font-size: 10px;
+    opacity: 0.6;
+    text-transform: uppercase;
+}
+
+.v-play-btn {
+    margin-left: auto;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    color: white;
+    cursor: pointer;
+}
+/* Estilos para version-item */
+.version-item {
+    padding: 10px;
+    margin-bottom: 5px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.version-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.version-item.active {
+    background: var(--accent-blue);
+    border-left: 4px solid #4ecdc4;
+}
+
+.version-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 5px;
+}
+
+.btn-gear {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 3px;
+    width: 30px;
+    height: 30px;
+    color: #9BA8AB;
+    cursor: pointer;
+    transition: 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-gear:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
 }

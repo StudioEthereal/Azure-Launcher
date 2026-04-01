@@ -101,23 +101,14 @@
             </div>
 
             <div class="versions-section">
-                <div class="versions-header">
-                    <span data-i18n="installedVersions">VERSIONES INSTALADAS</span>
-                    <button class="btn-icon" onclick="addVersion()"><i class="fa-solid fa-plus"></i></button>
-                </div>
-                <div id="versions-list" class="versions-list">
-                    <p class="empty-text" data-i18n="versionsEmpty">No hay versiones. Haz clic en '+' para agregar.</p>
+                <h2 class="section-title">Versiones Instaladas</h2>
+                <div id="versions-container" class="versions-grid">
                 </div>
             </div>
 
             <div class="play-zone">
-                <label class="version-label" data-i18n="selectedVersion">VERSIÓN SELECCIONADA:</label>
-                <select id="version-select">
-                    <option value="1.20.4">Minecraft 1.20.4</option>
-                    <option value="1.8.9">Minecraft 1.8.9</option>
-                </select>
                 <button id="btn-play-main" class="btn-play">
-                    <i class="fa-solid fa-play"></i> <span data-i18n="playNow">¡JUGAR AHORA!</span>
+                    <i class="fa-solid fa-play"></i> <span id="play-button-text" data-i18n="playNow">¡JUGAR AHORA!</span>
                 </button>
             </div>
         </aside>
@@ -211,6 +202,20 @@
                 <button class="btn-save" onclick="applyLanguage()">
                     <i class="fa-solid fa-globe"></i> <span data-i18n="applyLanguageBtn">Aplicar idioma</span>
                 </button>
+            </div>
+        </div>
+        <hr class="settings-divider">
+        <div class="settings-section">
+            <h2><i class="fa-brands fa-java"></i> Configuración de Java</h2>
+            <p class="settings-desc">Selecciona la ruta de Java para versiones específicas de Minecraft.</p>
+            <div class="settings-group">
+                <label>Ruta de Java (javaw.exe)</label>
+                <div style="display: flex; gap: 10px; margin-top: 5px;">
+                    <input type="text" id="java-path-input" placeholder="C:\Program Files\Java\..." readonly 
+                           style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--accent-blue);">
+                    <button id="btn-browse-java" class="btn-secondary" style="padding: 0 15px;">🔍 Buscar</button>
+                </div>
+                <p id="java-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
             </div>
         </div>
     </div>
