@@ -1,0 +1,71 @@
+{
+  "name": "azure-launcher",
+  "version": "1.0.9",
+  "description": "Azure Luncher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "predist": "node scripts/prepare-win-codesign.js",
+    "dist": "electron-builder --publish=always",
+    "dist:local": "electron-builder --publish=never"
+  },
+  "keywords": [],
+  "author": "Studio Ethereal",
+  "license": "ISC",
+  "dependencies": {
+    "@xmcl/core": "^2.15.1",
+    "@xmcl/curseforge": "^2.2.0",
+    "@xmcl/installer": "^6.1.2",
+    "@xmcl/mod-parser": "^3.4.2",
+    "@xmcl/modrinth": "^2.5.0",
+    "@xmcl/system": "^2.2.9",
+    "axios": "^1.14.0",
+    "discord-rpc": "^4.0.1",
+    "electron-updater": "^6.8.3",
+    "firebase": "^12.11.0",
+    "mc-server-status": "^2.0.2",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.5",
+    "prismarine-nbt": "^2.8.0",
+    "skinview3d": "^3.4.1"
+  },
+  "devDependencies": {
+    "electron": "^25.9.8",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.azure.launcher",
+    "productName": "Azure Launcher",
+    "copyright": "Copyright © 2026 Azure Launcher",
+    "directories": {
+      "output": "dist"
+    },
+    "toolsets": {
+      "winCodeSign": "1.0.0"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "StudioEthereal",
+        "repo": "Azure-Launcher"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "Azure-Launcher.ico",
+      "artifactName": "AzureLauncher-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Azure Launcher",
+      "installerIcon": "Azure-Launcher.ico",
+      "uninstallerIcon": "Azure-Launcher.ico",
+      "uninstallDisplayName": "Azure Launcher (Desinstalar)"
+    }
+  }
+}
