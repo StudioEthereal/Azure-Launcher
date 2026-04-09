@@ -81,7 +81,7 @@
     <main id="screen-dashboard" class="screen">
         <aside class="sidebar">
             <div class="user-profile-card">
-                <div class="profile-header">
+                <div class="profile-header" onclick="showScreen('screen-account-selector')" title="Cambiar cuenta" style="cursor: pointer;">
                     <img src="Azure-Launcher.png" id="user-avatar" alt="Avatar">
                     <div class="user-info">
                         <span id="user-name">Usuario</span>
@@ -288,10 +288,29 @@
                 </div>
                 <p id="java-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
             </div>
-            <div class="setting-group" style="margin-top: 15px;">
-                <label for="ram-input">Memoria RAM asignada (GB):</label>
-                <input type="number" id="ram-input" value="4" min="1" max="16" class="search-input" style="width: 100%; margin-top: 5px;">
-                <p id="ram-status" class="java-status">Por defecto: 4GB</p>
+            <div class="settings-group" style="margin-top: 15px;">
+                <div class="settings-header">
+                    <i class="fa-solid fa-memory RAM-icon"></i>
+                    <span>Asignación de Memoria RAM</span>
+                </div>
+                <div class="ram-selector-container">
+                    <div class="ram-presets">
+                        <button type="button" class="ram-btn" onclick="setRamPreset(2048, this)">2 GB</button>
+                        <button type="button" class="ram-btn" onclick="setRamPreset(4096, this)">4 GB</button>
+                        <button type="button" class="ram-btn" onclick="setRamPreset(6144, this)">6 GB</button>
+                        <button type="button" class="ram-btn" id="btn-custom-ram" onclick="showCustomRam()">Personalizado</button>
+                    </div>
+
+                    <div id="custom-ram-input-container" style="display: none; margin-top: 10px;">
+                        <div class="input-with-label">
+                            <input type="number" id="ram-custom-value" placeholder="Ej: 8192" oninput="updateCustomRam(this.value)" min="1024" step="256">
+                            <span>MB</span>
+                        </div>
+                    </div>
+
+                    <input type="hidden" id="ram-final-value" name="ram_max" value="4">
+                </div>
+                <p id="ram-status" class="java-status">Por defecto: 4GB (4096 MB)</p>
             </div>
         </div>
             </div>

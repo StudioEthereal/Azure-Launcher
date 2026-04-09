@@ -1,6 +1,6 @@
 {
   "name": "azure-launcher",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Azure Luncher",
   "main": "main.js",
   "scripts": {
@@ -20,14 +20,20 @@
     "@xmcl/modrinth": "^2.5.0",
     "@xmcl/system": "^2.2.9",
     "axios": "^1.14.0",
+    "crafatar": "^1.1.0",
+    "discord-oauth2": "^2.12.1",
     "discord-rpc": "^4.0.1",
+    "electron-store": "^11.0.2",
     "electron-updater": "^6.8.3",
     "firebase": "^12.11.0",
+    "fs-extra": "^11.3.4",
     "mc-server-status": "^2.0.2",
     "minecraft-launcher-core": "^3.18.2",
     "msmc": "^5.0.5",
     "prismarine-nbt": "^2.8.0",
-    "skinview3d": "^3.4.1"
+    "sharp": "^0.34.5",
+    "skinview3d": "^3.4.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "electron": "^25.9.8",

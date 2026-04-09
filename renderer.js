@@ -1,12 +1,19 @@
 const { ipcRenderer, clipboard, nativeImage } = require('electron');
 const ipc = ipcRenderer;
+let launcherConfig = {};
 
 // skinview3d se carga desde CDN en index.html (window.skinview3d). No usar require() en Electron renderer por incompatibilidades ESM.
 
-// Firebase imports (comentados temporalmente para probar)
-// const { initializeApp, getApps, getApp } = require('firebase/app');
-// const { getDatabase, ref, set, onValue, remove, update, off, get } = require('firebase/database');
-// const { getStorage, ref: storageRef, uploadBytes, getDownloadURL } = require('firebase/storage');
+// --- CONFIGURACIÓN DE FIREBASE ---
+const FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyCrNo2X1qyL5fs-daXIPGZVsC7mqiJqVRU',
+    authDomain: 'azurelauncher.firebaseapp.com',
+    databaseURL: 'https://azurelauncher-default-rtdb.firebaseio.com',
+    projectId: 'azurelauncher',
+    storageBucket: 'azurelauncher.firebasestorage.app',
+    messagingSenderId: '77647179819',
+    appId: '1:77647179819:web:7ace2a6365cd06a657ba6e'
+};
 
 // --- VARIABLES GLOBALES ---
 let firebaseDb = null;
@@ -29,70 +36,91 @@ let pendingDeleteIndex = null; // ID de cuenta (método viejo)
 let pendingConfirmAction = null;
 let pendingIconProfileId = null;
 
-// --- CONFIGURACIÓN DE FIREBASE ---
-// const FIREBASE_CONFIG = {
-//     apiKey: 'AIzaSyCrNo2X1qyL5fs-daXIPGZVsC7mqiJqVRU',
-//     authDomain: 'azurelauncher.firebaseapp.com',
-//     databaseURL: 'https://azurelauncher-default-rtdb.firebaseio.com',
-//     projectId: 'azurelauncher',
-//     storageBucket: 'azurelauncher.firebasestorage.app',
-//     messagingSenderId: '77647179819',
-//     appId: '1:77647179819:web:7ace2a6365cd06a657ba6e'
-// };
-
-// Inicialización Segura (comentada temporalmente)
-// try {
-//     const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
-//     firebaseDb = getDatabase(app);
-//     firebaseFns = { ref, set, onValue, remove, update, off, get };
-//     firebaseReady = true;
-
-//     window.fbSet = set;
-//     window.fbRef = ref;
-//     window.fbOnValue = onValue;
-//     window.fbRemove = remove;
-//     window.fbUpdate = update;
-
-//     console.log('✅ Firebase Cargado');
-// } catch (e) {
-//     console.error('❌ Error cargando Firebase:', e);
-// }
-
 // Skin viewer variables
 let skinViewer;
-let currentSkinPath = null;
-let currentModel = "default"; // steve
+let currentSkinFile = null;
+let currentModel = "default";
+
+async function loadLauncherConfig() {
+    try {
+        const config = await ipc.invoke('get-config');
+        launcherConfig = config || {};
+        const mcInput = document.getElementById('minecraft-path-input');
+        const javaInput = document.getElementById('java-path-input');
+        const mcMsg = document.getElementById('minecraft-status-msg');
+        const javaMsg = document.getElementById('java-status-msg');
+
+        if (mcInput && config?.minecraftPath) mcInput.value = config.minecraftPath;
+        if (javaInput && config?.javaPath) javaInput.value = config.javaPath;
+        if (mcMsg) mcMsg.innerText = config?.minecraftPath ? `Ruta .minecraft detectada: ${config.minecraftPath}` : 'El launcher detectará automáticamente tu carpeta .minecraft.';
+        if (javaMsg) javaMsg.innerText = config?.javaPath ? `Java detectado: ${config.javaPath}` : 'El launcher detectará automáticamente javaw.exe.';
+    } catch (error) {
+        console.error('Error cargando la configuración del launcher:', error);
+    }
+}
+
+async function selectMinecraftDirectory() {
+    const selected = await ipc.invoke('select-directory');
+    if (!selected) return;
+    const lower = selected.toLowerCase();
+    if (!lower.includes('.minecraft') && !lower.endsWith('minecraft')) {
+        showToast('Debes seleccionar la carpeta .minecraft correcta');
+        return;
+    }
+    await ipc.invoke('set-minecraft-path', selected);
+    showToast('Carpeta .minecraft actualizada');
+}
+
+async function selectJavaExecutable() {
+    const selected = await ipc.invoke('select-java');
+    if (!selected) return;
+    if (!selected.toLowerCase().endsWith('javaw.exe')) {
+        showToast('Debes seleccionar el ejecutable javaw.exe');
+        return;
+    }
+    await ipc.invoke('set-java-path', selected);
+    showToast('Ruta de Java actualizada');
+}
+
+ipc.on('config-updated', (_event, data) => {
+    if (data.minecraftPath || data.javaPath) {
+        loadLauncherConfig();
+    }
+});
+
+// Skin viewer variables
 
 // Cape variables
 let currentCapeFile = null;
 
 // Initialize skin viewer
-function initSkinViewer() {
-    const canvas = document.getElementById("skin-viewer-canvas");
-
-    skinViewer = new skinview3d.SkinViewer({
-        canvas: canvas,
-        width: 300,
-        height: 400,
-        skin: "https://minotar.net/skin/Steve"
-    });
-
-    skinViewer.controls.enableZoom = true;
-    skinViewer.controls.enableRotate = true;
-
-    skinview3d.createOrbitControls(skinViewer);
-
-    const idle = skinview3d.createAnimation(skinViewer, skinview3d.WalkingAnimation);
-    idle.speed = 0.5;
-}
-
-// Handle skin upload
+// initSkinViewer duplicado eliminado
+// initSkinViewer duplicado eliminado
+// Handle skin upload (solo offline)
 function manejarSubidaDeSkin(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    if (!currentAccount) {
+        console.warn("No hay cuenta actual, no se puede subir skin");
+        return;
+    }
+
+    if (currentAccount.type !== 'offline') {
+        console.warn("Solo usuarios offline pueden subir skins personalizadas");
+        return;
+    }
+
+    // Verificar Discord vinculado (opcional)
+    const discordId = localStorage.getItem('discord_user_id');
+    if (!discordId) {
+        console.warn("Se recomienda vincular Discord para subir skins");
+        // No bloquear
+    }
+
     const url = URL.createObjectURL(file);
     currentSkinPath = url;
+    currentSkinFile = file;
 
     skinViewer.loadSkin(url);
 
@@ -100,44 +128,85 @@ function manejarSubidaDeSkin(event) {
     document.getElementById("step-4-container").style.opacity = "1";
 }
 
-// Upload skin to Firebase
-async function uploadSkin(uuid) {
-    if (!currentSkinFile) return;
+// Upload skin to Firebase (sin llamar login)
+async function uploadSkinLocal(file) {
+    if (!currentAccount || currentAccount.type !== 'offline') {
+        alert("Solo usuarios offline pueden subir skins");
+        return;
+    }
 
-    const fileRef = storageRef(storage, `skins/${uuid}.png`);
-    await uploadBytes(fileRef, currentSkinFile);
-    const url = await getDownloadURL(fileRef);
+    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage || !window.fbStorageRef || !window.fbUploadBytes || !window.fbGetDownloadURL) {
+        alert('Firebase no está disponible. La skin no puede subirse en este momento.');
+        return;
+    }
 
-    await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
+    const uuid = currentAccount.uuid || crypto.randomUUID();
+    if (!currentAccount.uuid) {
+        currentAccount.uuid = uuid;
+        saveStoredAccounts();
+    }
+
+    const storageReference = window.fbStorageRef(window.fbStorage, `skins/${uuid}.png`);
+    await window.fbUploadBytes(storageReference, file);
+    const url = await window.fbGetDownloadURL(storageReference);
+
+    await firebaseFns.update(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
+        ...await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`)).then(s => s.val() || {}),
+        username: currentAccount.name,
+        type: 'offline',
+        discordId: localStorage.getItem('discord_user_id') || null,
         skinUrl: url,
         model: currentModel,
         updated: Date.now()
     });
 
-    return url;
+    skinViewer.loadSkin(url, { model: currentModel || 'default' });
+    document.getElementById("status-text").textContent = "Skin subida a Firebase correctamente";
 }
 
-// Load skin from Firebase
-async function loadFirebaseSkin(uuid) {
-    const snapshot = await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`));
-    if (snapshot.exists()) {
-        const data = snapshot.val();
-        skinViewer.loadSkin(data.skinUrl, { model: data.model });
-    }
+// Save offline skin to Firebase
+async function saveOfflineSkin(uuid, file) {
+    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage) return;
+
+    const storageRef = window.fbStorageRef(window.fbStorage, `skins/${uuid}.png`);
+    await window.fbUploadBytes(storageRef, file);
+    const url = await window.fbGetDownloadURL(storageRef);
+
+    await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
+        type: "offline",
+        skinUrl: url,
+        model: currentModel,
+        updatedAt: Date.now()
+    });
+
+    skinViewer.loadSkin(url, { model: currentModel });
 }
 
-// Load skin (premium or Firebase)
-async function loadSkin(uuid) {
-    try {
-        const res = await fetch(`https://sessionserver.mojang.com/session/minecraft/profile/${uuid}`);
-        if (res.ok) {
-            loadPremiumSkin(uuid);
-            return;
+// Load user skin (premium or Firebase)
+async function loadUserSkin(uuid, accountType = 'premium') {
+    if (firebaseReady && firebaseDb && firebaseFns) {
+        const snapshot = await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`));
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            if (data?.skinUrl) {
+                skinViewer.loadSkin(data.skinUrl, { model: data.model || 'default' });
+                return;
+            }
         }
-    } catch (e) {}
+    }
 
-    await loadFirebaseSkin(uuid);
+    if (accountType === 'offline') {
+        loadOfflineSkin();
+        return;
+    }
+
+    loadPremiumSkin(uuid);
 }
+
+function loadOfflineSkin() {
+    skinViewer.loadSkin('https://minotar.net/skin/Steve');
+}
+
 
 // Set model functions
 function setClassicModel() {
@@ -160,19 +229,99 @@ function setSlimModel() {
     document.getElementById("m-slim").classList.add("active");
 }
 
-// Load premium skin
-function loadPremiumSkin(uuid) {
-    const url = `https://crafatar.com/skins/${uuid}`;
-    skinViewer.loadSkin(url);
+// Get version icon path (via IPC)
+async function getVersionIcon(version) {
+    try {
+        const iconPath = await ipc.invoke('get-version-icon', version);
+        return iconPath || 'assets/default-icon.png';
+    } catch (error) {
+        console.error('Error getting version icon:', error);
+        return 'assets/default-icon.png';
+    }
+}
+
+// Update version icon display
+async function updateVersionIcon(version) {
+    const iconElement = document.getElementById('version-icon');
+    if (iconElement) {
+        iconElement.src = await getVersionIcon(version);
+    }
 }
 
 // Load current account skin into viewer
-async function loadCurrentAccountSkin() {
-    if (!currentAccount || !skinViewer) return;
+async function loadSkinForAccount(account) {
+    if (!account) return;
+    if (!skinViewer) {
+        console.warn('Skin viewer no está listo, reintentando carga de skin...');
+        setTimeout(() => loadSkinForAccount(account), 500);
+        return;
+    }
 
-    const uuid = currentAccount.uuid || currentAccount.name;
-    await loadSkin(uuid);
-    await loadFirebaseCape(uuid);
+    const uuid = account.uuid || account.username;
+
+    if (account.type === "premium") {
+        const url = `https://crafatar.com/skins/${uuid}`;
+        skinViewer.loadSkin(url, { model: "default" });
+        return;
+    }
+
+    // Offline: buscar en Firebase
+    if (firebaseReady && firebaseDb && firebaseFns) {
+        try {
+            const snapshot = await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`));
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                skinViewer.loadSkin(data.skinUrl, { model: data.model || "default" });
+            } else {
+                skinViewer.loadSkin("https://minotar.net/skin/Steve");
+            }
+        } catch (error) {
+            console.error("Error cargando skin offline:", error);
+            skinViewer.loadSkin("https://minotar.net/skin/Steve");
+        }
+    } else {
+        skinViewer.loadSkin("https://minotar.net/skin/Steve");
+    }
+}
+
+// Upload offline skin
+async function uploadOfflineSkin(account) {
+    if (!currentSkinFile || !account) return;
+
+    const uuid = account.uuid || account.username;
+
+    if (!firebaseReady || !firebaseDb || !firebaseFns || !firebaseStorage) {
+        showToast('Error', 'Firebase no está configurado', 'error');
+        return;
+    }
+
+    try {
+        const refStorage = firebaseFns.ref(firebaseStorage, `skins/${uuid}.png`);
+        await firebaseFns.uploadBytes(refStorage, currentSkinFile);
+        const url = await firebaseFns.getDownloadURL(refStorage);
+
+        await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
+            skinUrl: url,
+            model: currentModel,
+            updated: Date.now()
+        });
+
+        skinViewer.loadSkin(url, { model: currentModel });
+        showToast('Azure', 'Skin guardada correctamente', 'success');
+    } catch (error) {
+        console.error('Error subiendo skin:', error);
+        showToast('Error', 'No se pudo guardar la skin', 'error');
+    }
+}
+
+// Check if user can upload skin
+function canUploadSkin(account) {
+    if (!account) return false;
+    if (account.type === "premium") return true;
+
+    // For offline, check Discord link
+    const discordLink = localStorage.getItem("discord_link");
+    return !!discordLink;
 }
 
 // Select model
@@ -195,10 +344,14 @@ function manejarSubidaDeCape(e) {
 
 async function uploadCape(uuid) {
     if (!currentCapeFile) return;
+    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage || !window.fbStorageRef || !window.fbUploadBytes || !window.fbGetDownloadURL) {
+        console.warn('Firebase no está disponible para subir la cape.');
+        return;
+    }
 
-    const fileRef = storageRef(storage, `capes/${uuid}.png`);
-    await uploadBytes(fileRef, currentCapeFile);
-    const url = await getDownloadURL(fileRef);
+    const storageReference = window.fbStorageRef(window.fbStorage, `capes/${uuid}.png`);
+    await window.fbUploadBytes(storageReference, currentCapeFile);
+    const url = await window.fbGetDownloadURL(storageReference);
 
     await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
         ...await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`)).then(s => s.val() || {}),
@@ -311,6 +464,8 @@ window.renderizarSkin3D = function(skinURL) {
             height: h,
             skin: skinURL
         });
+        window.miVisor3D = globalSkinViewer;
+        skinViewer = globalSkinViewer;
 
         globalSkinViewer.animation = new skinview3d.WalkingAnimation();
         globalSkinViewer.animation.speed = 0.6;
@@ -397,31 +552,36 @@ function migrateLegacyVersionList() {
 
 
 // Inicialización Segura
-try {
-    const { initializeApp, getApps, getApp } = require('firebase/app');
-    const { getDatabase, ref: dbRef, set, onValue, remove, update, off, get } = require('firebase/database');
-    const { getStorage, ref: storageRef, uploadBytes, getDownloadURL } = require('firebase/storage');
+const hasFirebaseConfig = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.storageBucket && FIREBASE_CONFIG.projectId;
+if (hasFirebaseConfig) {
+    try {
+        const { initializeApp, getApps, getApp } = require('firebase/app');
+        const { getDatabase, ref: dbRef, set, onValue, remove, update, off, get } = require('firebase/database');
+        const { getStorage, ref: storageRef, uploadBytes, getDownloadURL } = require('firebase/storage');
 
-    const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
-    firebaseDb = getDatabase(app);
-    firebaseFns = { dbRef, set, onValue, remove, update, off, get };
-    firebaseReady = true;
+        const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+        firebaseDb = getDatabase(app);
+        firebaseFns = { ref: dbRef, set, onValue, remove, update, off, get };
+        firebaseReady = true;
 
-    window.fbSet = set;
-    window.fbRef = dbRef;
-    window.fbOnValue = onValue;
-    window.fbRemove = remove;
-    window.fbUpdate = update;
-    window.fbGet = get;
-    window.firebaseStorage = getStorage(app);
-    window.fbStorage = window.firebaseStorage;
-    window.fbStorageRef = storageRef;
-    window.fbUploadBytes = uploadBytes;
-    window.fbGetDownloadURL = getDownloadURL;
+        window.fbSet = set;
+        window.fbRef = dbRef;
+        window.fbOnValue = onValue;
+        window.fbRemove = remove;
+        window.fbUpdate = update;
+        window.fbGet = get;
+        window.firebaseStorage = getStorage(app);
+        window.fbStorage = window.firebaseStorage;
+        window.fbStorageRef = storageRef;
+        window.fbUploadBytes = uploadBytes;
+        window.fbGetDownloadURL = getDownloadURL;
 
-    console.log('✅ Firebase Cargado');
-} catch (e) {
-    console.error('❌ Error cargando Firebase:', e);
+        console.log('✅ Firebase Cargado');
+    } catch (e) {
+        console.error('❌ Error cargando Firebase:', e);
+    }
+} else {
+    console.warn('Firebase no está configurado. Activa FIREBASE_CONFIG para usar skins offline y Discord.');
 }
 
 // Función para limpiar nombres (Firebase no acepta puntos o hashtags en las llaves)
@@ -819,11 +979,14 @@ function normalizeAccount(account = {}) {
     const resolvedName = String(account.username || account.name || '').trim();
     if (!resolvedName) return null;
 
+    const type = account.type === 'premium' ? 'premium' : 'offline';
+    const uuid = account.uuid || (type === 'offline' ? crypto.randomUUID() : null);
+
     return {
         username: resolvedName,
         name: resolvedName,
-        type: account.type === 'premium' ? 'premium' : 'offline',
-        uuid: account.uuid || null,
+        type,
+        uuid,
         accessToken: account.accessToken || null,
         refreshToken: account.refreshToken || null,
         profile: account.profile || null,
@@ -1328,20 +1491,18 @@ function restablecerSkinPredeterminada() {
 
 function openSkinFileDialog() {
     if (!currentAccount) {
-        const accounts = getStoredAccounts();
-        const autoLoginAccount = getAutoLoginAccount(accounts) || accounts[0] || null;
-        if (autoLoginAccount) {
-            selectAccount(autoLoginAccount, { closeModal: false, updateList: true });
-            showScreen('screen-dashboard');
-            showSection('play');
-        } else {
-            showToast('Selecciona o crea una cuenta antes de subir una skin.');
-            return;
-        }
+        showToast('Selecciona o crea una cuenta antes de subir una skin.');
+        showScreen('screen-account-selector');
+        return;
     }
 
     initSkinViewer();
-    document.getElementById("file-input").click();
+    const fileInput = document.getElementById('file-input');
+    if (!fileInput) {
+        showToast('No se encontró el elemento de selección de archivo.');
+        return;
+    }
+    fileInput.click();
 }
 
 function setClassicModel() {
@@ -1366,13 +1527,8 @@ function resetSkinView() {
 
 function applySkin() {
     if (!currentAccount) {
-        const accounts = getStoredAccounts();
-        const autoLoginAccount = getAutoLoginAccount(accounts) || accounts[0] || null;
-        if (autoLoginAccount) {
-            selectAccount(autoLoginAccount, { closeModal: false, updateList: true });
-            showScreen('screen-dashboard');
-            showSection('play');
-        }
+        showToast('Debes iniciar sesión primero.');
+        return;
     }
     aplicarSkinEnCuenta();
 }
@@ -1405,14 +1561,13 @@ function aplicarSkinEnCuenta() {
 
     saveSkinToLibrary(currentSkinDataUrl, skinModel, skinName, currentAccount.name);
 
-    // Upload to Firebase if file is selected
-    if (currentSkinFile) {
-        uploadSkin(currentAccount.uuid || currentAccount.name)
-            .then((url) => {
+    if (currentAccount.type === 'offline' && currentSkinFile) {
+        saveOfflineSkin(currentAccount.uuid || currentAccount.name, currentSkinFile)
+            .then(() => {
                 showToast('Skin subida a Firebase y guardada localmente.');
             })
             .catch((err) => {
-                console.error('Error uploading to Firebase:', err);
+                console.error('Error uploading a Firebase:', err);
                 showToast('Skin guardada localmente. Error al subir a Firebase.');
             });
     } else {
@@ -1991,78 +2146,7 @@ function applyTranslations(lang = getCurrentLanguage()) {
 }
 
 // --- Cargar ajustes guardados al abrir ---
-window.addEventListener('DOMContentLoaded', () => {
-    try {
-        const savedColor = localStorage.getItem('azureAccentColor')
-            || localStorage.getItem('themeColor')
-            || localStorage.getItem('launcher-accent');
-
-        if (savedColor) {
-            setLauncherAccent(savedColor);
-            document.querySelectorAll('.palette-item').forEach(item => {
-                if (item.style.getPropertyValue('--color').trim().toLowerCase() === savedColor.trim().toLowerCase()) {
-                    item.classList.add('active');
-                    const selectedLabel = document.getElementById('selected-color-name');
-                    const actionBar = document.getElementById('palette-action-bar');
-                    if (selectedLabel) selectedLabel.innerText = `Color guardado: ${item.innerText}`;
-                    if (actionBar) actionBar.classList.remove('hidden');
-                }
-            });
-        }
-
-        const savedLang = getCurrentLanguage();
-        const languageSelector = document.getElementById('language-select-new');
-        if (languageSelector) {
-            languageSelector.value = savedLang;
-        }
-        applyTranslations(savedLang);
-
-        loadStatusBar();
-        loadAccounts();
-        if (currentAccount) {
-            actualizarVisualizacionSkin(currentAccount.name);
-            loadCurrentAccountSkin();
-        }
-        loadVersionList();
-        loadInstalledVersions();
-
-        const btnPlayMain = document.getElementById('btn-play-main');
-        if (btnPlayMain) {
-            btnPlayMain.addEventListener('click', lanzarJuego);
-            btnPlayMain.disabled = false;
-        }
-        window.lanzarJuego = lanzarJuego;
-
-        updateDiscordStatus('En el menú');
-        startFriendsRealtimeSync();
-        actualizarTopUI();
-        escucharTransferencias();
-        initSkinViewer();
-
-        // Auto-login immediately to prevent login prompts in skin section
-        try {
-            const accounts = getStoredAccounts();
-            const autoLoginAccount = getAutoLoginAccount(accounts);
-
-            if (autoLoginAccount) {
-                selectAccount(autoLoginAccount, { closeModal: false, updateList: true });
-                showScreen('screen-dashboard');
-                showSection('play');
-            } else if (accounts.length > 0) {
-                renderAccountSelector();
-                showScreen('screen-account-selector');
-            } else {
-                showScreen('screen-login-choice');
-            }
-        } catch (startupError) {
-            console.error('Error en selección de pantalla inicial:', startupError);
-            safeStartupFallback();
-        }
-    } catch (startupError) {
-        console.error('Error durante el arranque del renderer:', startupError);
-        safeStartupFallback();
-    }
-});
+// DOMContentLoaded eliminado para evitar duplicados
 
 
 // --- Toast notifications ---
@@ -2159,45 +2243,42 @@ if (savedLanguage) {
 }
 
 function loadAccounts() {
-    const accounts = getStoredAccounts();
     const select = document.getElementById('account-select');
+    if (!select) return;
 
-    if (select) {
-        if (accounts.length === 0) {
-            select.innerHTML = '<option value="">Sin cuentas</option>';
-            select.disabled = true;
-        } else {
-            select.disabled = false;
-            select.innerHTML = accounts.map((acc, index) => `
-                <option value="${index}">${acc.name}${acc.isFavorite ? ' ⭐' : ''}</option>
-            `).join('');
+    const accounts = getStoredAccounts();
+    select.innerHTML = accounts.map((acc, index) => 
+        `<option value="${index}">${acc.name}${acc.isFavorite ? ' ⭐' : ''}</option>`
+    ).join('');
+
+    if (currentAccount) {
+        const persistedIndex = accounts.findIndex(acc => acc.name.toLowerCase() === currentAccount.name.toLowerCase());
+        if (persistedIndex !== -1) {
+            select.value = String(persistedIndex);
+            // IMPORTANTE: Aquí llamamos con updateList: false para no crear un bucle
+            selectAccount(accounts[persistedIndex], { closeModal: false, updateList: false });
         }
+    }
+    
+    // Si no hay cuenta actual pero hay guardadas, seleccionamos la favorita o la primera
+    if (!currentAccount && accounts.length > 0) {
+        const preferredIndex = accounts.findIndex(acc => acc.isFavorite);
+        const indexToSelect = preferredIndex !== -1 ? preferredIndex : 0;
+        select.value = String(indexToSelect);
+        selectAccount(accounts[indexToSelect], { closeModal: false, updateList: false });
+    }
+
+    if (accounts.length === 0) {
+        select.innerHTML = '';
+        select.disabled = true;
+    } else {
+        select.disabled = false;
     }
 
     renderAccountList();
     renderLoginAccounts();
     renderAccountSelector();
     renderAccountEditList();
-
-    if (currentAccount) {
-        const persistedIndex = accounts.findIndex((acc) => acc.name.toLowerCase() === currentAccount.name.toLowerCase());
-        if (persistedIndex !== -1) {
-            if (select) select.value = String(persistedIndex);
-            selectAccount(accounts[persistedIndex], { closeModal: false, updateList: true });
-            return;
-        }
-    }
-
-    currentAccount = null;
-    if (select && accounts.length > 0) {
-        const preferredIndex = accounts.findIndex((acc) => acc.isFavorite);
-        select.value = String(preferredIndex !== -1 ? preferredIndex : 0);
-    }
-
-    const userName = document.getElementById('user-name');
-    if (userName) userName.innerText = 'Usuario';
-    setUserAvatar('Steve');
-    updateWelcomeMessage();
 }
 
 function renderAccountEditList() {
@@ -2287,6 +2368,7 @@ function selectAccount(acc, options = {}) {
 
     const storedAccount = accounts.find((item) => item.name.toLowerCase() === selectedAccount.name.toLowerCase()) || selectedAccount;
     currentAccount = storedAccount;
+    localStorage.setItem('current_account', JSON.stringify(storedAccount));
 
     const userName = document.getElementById('user-name');
     if (userName) userName.innerText = storedAccount.name;
@@ -2300,7 +2382,7 @@ function selectAccount(acc, options = {}) {
 
     setUserAvatar(storedAccount.name, storedAccount.avatar);
     actualizarVisualizacionSkin(storedAccount.name);
-    loadCurrentAccountSkin();
+    loadSkinForAccount(storedAccount);
     if (miVisor3D) {
         const avatar = getCachedAvatar(storedAccount.name);
         if (avatar) miVisor3D.loadSkin(avatar);
@@ -2330,7 +2412,7 @@ function selectAccount(acc, options = {}) {
     if (updateList) {
         renderAccountList();
         renderLoginAccounts();
-        renderAccountSelector();
+        // renderAccountSelector(); // Eliminado para evitar recursión infinita
         renderAccountEditList();
     }
 
@@ -2848,136 +2930,119 @@ function syncPresenceToFirebase() {
 }
 
 function startFriendsRealtimeSync() {
-    if (!firebaseReady || !firebaseDb || !firebaseFns) return;
+    try {
+        if (!firebaseReady || !firebaseDb || !firebaseFns) {
+            console.log("ℹ️ Firebase no listo, saltando sync amigos");
+            return;
+        }
 
-    const identity = getLinkedIdentity();
-    if (!identity) return;
+        const identity = getLinkedIdentity();
+        if (!identity) {
+            console.log("ℹ️ No hay identidad vinculada, saltando sync amigos");
+            return;
+        }
 
-    // 1. EVITAR CONGELAMIENTOS: Limpiar escuchadores anteriores
-    friendsRealtimeUnsubs.forEach(unsub => unsub());
-    friendsRealtimeUnsubs = [];
-    if (friendsPresenceInterval) {
-        clearInterval(friendsPresenceInterval);
-    }
+        // 1. EVITAR CONGELAMIENTOS: Limpiar escuchadores anteriores
+        friendsRealtimeUnsubs.forEach(unsub => unsub());
+        friendsRealtimeUnsubs = [];
+        if (friendsPresenceInterval) {
+            clearInterval(friendsPresenceInterval);
+        }
 
-    activeFriendsIdentity = cleanFriendKey(identity);
-    ensureFriendsPresenceHeartbeat();
+        activeFriendsIdentity = cleanFriendKey(identity);
+        ensureFriendsPresenceHeartbeat();
 
-    const { ref, onValue } = firebaseFns;
+        const { ref, onValue } = firebaseFns;
 
-    // 2. Escuchar Solicitudes
-    const reqRef = ref(firebaseDb, `solicitudes/${activeFriendsIdentity}`);
-    const unsubReq = onValue(reqRef, (snapshot) => {
-        const currentStore = getFriendsStore();
-        const previousIds = new Set(currentStore.pendingRequests.map((item) => item.requestKey || item.id));
-        const data = snapshot.val() || {};
-        const pendingRequests = Object.entries(data).map(([requestKey, item]) => enrichFriendEntry({
-            ...item,
-            id: item?.id || requestKey,
-            requestKey,
-            tag: item?.tag || item?.from,
-            nick: item?.nick || String(item?.tag || item?.from || '').split('#')[0]
-        }));
+        // 2. Escuchar Solicitudes
+        const reqRef = ref(firebaseDb, `solicitudes/${activeFriendsIdentity}`);
+        const unsubReq = onValue(reqRef, (snapshot) => {
+            const currentStore = getFriendsStore();
+            const previousIds = new Set(currentStore.pendingRequests.map((item) => item.requestKey || item.id));
+            const data = snapshot.val() || {};
+            const pendingRequests = Object.entries(data).map(([requestKey, item]) => enrichFriendEntry({
+                ...item,
+                id: item?.id || requestKey,
+                requestKey,
+                tag: item?.tag || item?.from,
+                nick: item?.nick || String(item?.tag || item?.from || '').split('#')[0]
+            }));
 
-        pendingRequests.forEach((request) => {
-            const identifier = request.requestKey || request.id;
-            if (identifier && !previousIds.has(identifier)) {
-                showToast(`Nueva solicitud de ${request.tag}`);
-            }
+            pendingRequests.forEach((request) => {
+                const identifier = request.requestKey || request.id;
+                if (identifier && !previousIds.has(identifier)) {
+                    showToast(`Nueva solicitud de ${request.tag}`);
+                }
+            });
+
+            saveSyncedFriendsStore(pendingRequests, currentStore.friends);
+            if (activeSection === 'friends') renderFriendsPanel();
+        });
+        friendsRealtimeUnsubs.push(() => {
+            firebaseFns.off(reqRef);
         });
 
-        saveSyncedFriendsStore(pendingRequests, currentStore.friends);
-        if (activeSection === 'friends') renderFriendsPanel();
-    });
-    friendsRealtimeUnsubs.push(() => {
-        firebaseFns.off(reqRef);
-    });
+        // 3. Escuchar Amigos Activos
+        const friendsRef = ref(firebaseDb, `amigos/${activeFriendsIdentity}`);
+        const unsubFriends = onValue(friendsRef, (snapshot) => {
+            const currentStore = getFriendsStore();
+            const data = snapshot.val() || {};
+            const friends = Object.entries(data).map(([friendKey, item]) => enrichFriendEntry({
+                ...item,
+                id: item?.id || friendKey,
+                requestKey: friendKey,
+                tag: item?.tag || `${item?.nick || 'Jugador'}#0000`
+            }));
 
-    // 3. Escuchar Amigos Activos
-    const friendsRef = ref(firebaseDb, `amigos/${activeFriendsIdentity}`);
-    const unsubFriends = onValue(friendsRef, (snapshot) => {
-        const currentStore = getFriendsStore();
-        const data = snapshot.val() || {};
-        const friends = Object.entries(data).map(([friendKey, item]) => enrichFriendEntry({
-            ...item,
-            id: item?.id || friendKey,
-            requestKey: friendKey,
-            tag: item?.tag || `${item?.nick || 'Jugador'}#0000`
-        }));
+            saveSyncedFriendsStore(currentStore.pendingRequests, friends);
+            if (activeSection === 'friends') renderFriendsPanel();
+        });
+        friendsRealtimeUnsubs.push(() => {
+            firebaseFns.off(friendsRef);
+        });
 
-        saveSyncedFriendsStore(currentStore.pendingRequests, friends);
-        if (activeSection === 'friends') renderFriendsPanel();
-    });
-    friendsRealtimeUnsubs.push(() => {
-        firebaseFns.off(friendsRef);
-    });
+        // 4. Actualizar MI presencia (Estoy conectado en el launcher)
+        updateMyPresence();
+        friendsPresenceInterval = setInterval(updateMyPresence, 60000); // Cada 1 minuto, no cada 30s
 
-    // 4. Actualizar MI presencia (Estoy conectado en el launcher)
-    updateMyPresence();
-    friendsPresenceInterval = setInterval(updateMyPresence, 60000); // Cada 1 minuto, no cada 30s
+        // ESCUCHAR TRANSFERENCIAS ENTRANTES
+        const transfersRef = ref(firebaseDb, `transferencias/${activeFriendsIdentity}`);
+        onValue(transfersRef, (snapshot) => {
+            const data = snapshot.val();
+            const container = document.getElementById('transfers-list');
+            if (!container) return;
 
-    // ESCUCHAR TRANSFERENCIAS ENTRANTES
-    const transfersRef = ref(firebaseDb, `transferencias/${activeFriendsIdentity}`);
-    onValue(transfersRef, (snapshot) => {
-        const data = snapshot.val();
-        const container = document.getElementById('transfers-list');
-        if (!container) return;
+            container.innerHTML = '';
+            if (data) {
+                Object.keys(data).forEach(key => {
+                    const trans = data[key];
+                    const icon = trans.tipo === 'ip' ? 'fa-server' : 'fa-image';
+
+                    container.innerHTML += '<div class="friend-card" style="border-left: 3px solid var(--accent-light);">' +
+                        '<div class="friend-info">' +
+                            '<span class="friend-name"><i class="fa-solid ' + icon + '"></i> De: ' + trans.remitente + '</span>' +
+                            '<span class="friend-status-text">Quiere enviarte una ' + trans.tipo + '</span>' +
+                        '</div>' +
+                        '<div class="friend-actions">' +
+                            '<button class="c-btn btn-accept" onclick="aceptarTransferencia(&quot;' + key + '&quot;, &quot;' + trans.tipo + '&quot;, &quot;' + trans.contenido + '&quot;)">' +
+                                '<i class="fa-solid fa-check"></i>' +
+                            '</button>' +
+                            '<button class="c-btn btn-secondary" onclick="rechazarTransferencia(&quot;' + key + '&quot;)">' +
+                                '<i class="fa-solid fa-xmark"></i>' +
+                            '</button>' +
+                        '</div>' +
+                    '</div>';
+                });
+            }
+        });
         
-        container.innerHTML = '';
-        if (data) {
-            Object.keys(data).forEach(key => {
-                const trans = data[key];
-                const icon = trans.tipo === 'ip' ? 'fa-server' : 'fa-image';
-                
-                container.innerHTML += `
-                    <div class="friend-card" style="border-left: 3px solid var(--accent-light);">
-                        <div class="friend-info">
-                            <span class="friend-name"><i class="fa-solid ${icon}"></i> De: ${trans.remitente}</span>
-                            <span class="friend-status-text">Quiere enviarte una ${trans.tipo}</span>
-                        </div>
-                        <div class="friend-actions">
-                            <button class="c-btn btn-accept" onclick="aceptarTransferencia('${key}', '${trans.tipo}', '${trans.contenido}')">
-                                <i class="fa-solid fa-check"></i>
-                            </button>
-                            <button class="c-btn btn-secondary" onclick="rechazarTransferencia('${key}')">
-                                <i class="fa-solid fa-xmark"></i>
-                            </button>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-    });
-}
 
-async function unlinkDiscordAccount() {
-    // Usamos tu sistema de modales para mostrar peligro
-    const confirm = await showConfirmModal(
-        t('unlinkTitle'),
-        t('unlinkConfirm'),
-        'danger' // <- Esto debería poner los botones en rojo si tienes el CSS configurado
-    );
-
-    if (confirm) {
-        const currentTag = getLinkedIdentity();
-        if (currentTag && firebaseDb && firebaseFns) {
-            const cleanId = cleanFriendKey(currentTag);
-            // BORRAR TODO RASTRO DE FIREBASE
-            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `amigos/${cleanId}`));
-            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `solicitudes/${cleanId}`));
-            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `presencia/${cleanId}`));
-            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `transferencias/${cleanId}`)); // Por si acaso
-        }
-
-        stopFriendsRealtimeSync();
-        removeDiscordLinkData();
-        localStorage.removeItem(getFriendsStoreStorageKey());
-        localStorage.removeItem('azureFriendsStore');
-        showToast('Eliminado', 'Tu perfil ha sido borrado de la red', 'info');
-        
-        setTimeout(() => location.reload(), 1500);
+        console.log("✅ Sync amigos iniciado correctamente");
+    } catch (error) {
+        console.error("❌ Error en startFriendsRealtimeSync:", error);
     }
 }
+
 
 async function eliminarCuentaYDesvincular() {
     const confirm = await showConfirmModal(
@@ -3178,6 +3243,16 @@ async function processDiscordLink(selectedNick) {
             fullIdentity: finalTag
         });
 
+        // Si es usuario offline, guardar discordId en Firebase
+        if (currentAccount && currentAccount.type === 'offline' && firebaseReady && firebaseDb && firebaseFns) {
+            await firebaseFns.update(firebaseFns.ref(firebaseDb, `users/${currentAccount.uuid}`), {
+                discordId: userData.id,
+                username: selectedNick,
+                type: 'offline'
+            });
+            localStorage.setItem('discord_user_id', userData.id);
+        }
+
         document.getElementById('display-final-tag').innerText = finalTag;
         document.getElementById('auth-step-2')?.classList.add('hidden');
         document.getElementById('auth-step-3')?.classList.remove('hidden');
@@ -3190,25 +3265,7 @@ async function processDiscordLink(selectedNick) {
     }
 }
 
-function finalizeAuth() {
-    const finalTag = document.getElementById('display-final-tag')?.innerText || '';
-    if (finalTag && finalTag !== '...') {
-        localStorage.setItem('discord_user', finalTag);
-        const nameElement = document.getElementById('user-name');
-        if (nameElement) nameElement.innerText = finalTag;
-        document.getElementById('auth-modal')?.classList.add('hidden');
-        showToast('Azure', '¡Cuenta vinculada!', 'success');
-
-        startFriendsRealtimeSync();
-        renderFriendsPanel();
-        showSection('friends');
-
-        if (firebaseReady) updateMyPresence();
-        return;
-    }
-
-    showToast('Error', 'Finaliza el vínculo del Discord para continuar.', 'error');
-}
+// finalizeAuth duplicado eliminado
 
 function sendFriendRequest() {
     const input = document.getElementById('friend-request-input');
@@ -3600,31 +3657,7 @@ function loadVersionList() {
 }
 
 // --- NUEVO: Cargar versiones reales instaladas en .minecraft/versions ---
-async function loadInstalledVersions() {
-    const versionSelect = document.getElementById('version-select');
-    if (!versionSelect) return;
-
-    try {
-        const versions = await ipc.invoke('get-local-versions');
-
-        if (!Array.isArray(versions) || versions.length === 0) {
-            versionSelect.innerHTML = '<option value="">No hay versiones instaladas</option>';
-            return;
-        }
-
-        versionSelect.innerHTML = versions.sort().map((v) => 
-            `<option value="${v}">${v}</option>`
-        ).join('');
-
-        const ultimaVersion = localStorage.getItem('last_played_version');
-        if (ultimaVersion && versions.includes(ultimaVersion)) {
-            versionSelect.value = ultimaVersion;
-        }
-    } catch (error) {
-        console.error('Error al cargar versiones instaladas:', error);
-        versionSelect.innerHTML = '<option value="">Error al cargar versiones</option>';
-    }
-}
+// loadInstalledVersions duplicado eliminado
 
 function addVersion() {
     const version = prompt('Ingresa la versión de Minecraft (ej. 1.20.4):');
@@ -3787,16 +3820,22 @@ async function openMicrosoftLogin() {
             throw new Error(result?.error || 'No se recibió un perfil válido de Microsoft.');
         }
 
+        const resolvedName = result.account.username || result.account.name || result.account.profile?.name || 'Jugador';
         const account = addAccountToStorage({
-            name: result.account.username,
-            username: result.account.username,
+            name: resolvedName,
+            username: resolvedName,
+            id: result.account.uuid || result.account.id || null,
+            uuid: result.account.uuid || result.account.id || null,
             type: 'premium',
-            uuid: result.account.uuid,
-            accessToken: result.account.accessToken,
+            accessToken: result.account.accessToken || result.account.mcToken || null,
             refreshToken: result.account.refreshToken || null,
-            profile: result.account.profile,
-            avatar: `https://minotar.net/helm/${encodeURIComponent(result.account.username)}/64`
+            profile: result.account.profile || null,
+            avatar: `https://minotar.net/helm/${encodeURIComponent(resolvedName)}/64`
         });
+
+        if (!account) {
+            throw new Error('No se pudo guardar la cuenta Microsoft.');
+        }
 
         selectAccount(account, { closeModal: false, updateList: true });
         ipc.send('update-discord', { username: account.name, status: 'En el menú', version: 'Menú Principal' });
@@ -4355,19 +4394,7 @@ function applyLanguage() {
 }
 
 // FUNCIONES PARA TOP SERVIDORES REALES
-function registrarEntradaServidor(ip) {
-    if (!ip) return;
-
-    let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
-    if (!stats[ip]) stats[ip] = { clics: 0, oculto: false };
-    stats[ip].clics += 1;
-    localStorage.setItem('azure_stats_servers', JSON.stringify(stats));
-
-    localStorage.setItem('last_server', ip);
-    if (firebaseReady) updateMyPresence();
-
-    actualizarTopUI();
-}
+// registrarEntradaServidor duplicado eliminado
 
 function actualizarTopUI() {
     let stats = JSON.parse(localStorage.getItem('azure_stats_servers') || '{}');
@@ -4559,13 +4586,14 @@ async function renderVersionsUI() {
     addItem.addEventListener('click', () => openSkModal(null));
     container.appendChild(addItem);
 
-    merged.forEach((item) => {
+    for (const item of merged) {
         const div = document.createElement('div');
         div.className = 'version-item';
 
         const profile = getVersionProfile(item.version) || versionProfiles.find(p => p.id === item.id);
-        const iconPath = profile?.icon || 'Azure-Launcher.png';
-        const resolvedIcon = String(iconPath).startsWith('data:') || String(iconPath).startsWith('http')
+        const autoIcon = await getVersionIcon(item.version);
+        const iconPath = autoIcon !== 'assets/default-icon.png' ? autoIcon : (profile?.icon || 'Azure-Launcher.png');
+        const resolvedIcon = String(iconPath).startsWith('data:') || String(iconPath).startsWith('http') || String(iconPath).startsWith('file://')
             ? iconPath
             : `file://${iconPath}`;
 
@@ -4640,7 +4668,7 @@ async function renderVersionsUI() {
         });
 
         container.appendChild(div);
-    });
+    }
 
     // Seleccionar automáticamente la primera versión si no hay ninguna seleccionada
     if (!versionSeleccionada && merged.length > 0) {
@@ -5036,14 +5064,15 @@ function lanzarJuego() {
 
     // 1. PRIORIDAD: ¿Tiene Java esta versión? Si no, ¿Tiene el global? Si no, "java"
     const javaVersion = localStorage.getItem(`java_path_${versionSeleccionada}`);
-    const javaGlobal = localStorage.getItem('custom_java_path');
+    const javaGlobal = localStorage.getItem('custom_java_path') || launcherConfig.javaPath;
     const javaInput = document.getElementById('java-path-input') || {}; // Ajusta si tienes un input para Java
     const finalJavaPath = javaVersion || javaGlobal || javaInput.value || "java";
 
     console.log(`Iniciando ${versionSeleccionada} con ${finalJavaPath}`);
 
     // Enviar al main.js para iniciar con auth data
-    const ramValue = document.getElementById('ram-input') ? document.getElementById('ram-input').value : 4;
+    const ramFinal = document.getElementById('ram-final-value');
+    const ramValue = ramFinal ? (ramFinal.value || '4') : '4';
 
     // Mostrar la pantalla de lanzamiento mientras Java se prepara
     const launchScreen = document.getElementById('launch-screen');
@@ -5168,19 +5197,74 @@ function toggleServerVisibility(ip) {
 }
 
 // --- CONFIGURACIÓN DE RAM ---
-const ramInput = document.getElementById('ram-input');
-if (ramInput) {
-    // Cargar RAM guardada o dejar 4 por defecto
-    const savedRam = localStorage.getItem('custom_ram');
-    if (savedRam) {
-        ramInput.value = savedRam;
+function setRamPreset(amountMb, element) {
+    const ramFinal = document.getElementById('ram-final-value');
+    if (!ramFinal) return;
+
+    const ramGb = Math.max(2, Math.round(amountMb / 1024));
+    ramFinal.value = ramGb;
+    document.getElementById('custom-ram-input-container').style.display = 'none';
+    document.querySelectorAll('.ram-btn').forEach(btn => btn.classList.remove('active'));
+    if (element) element.classList.add('active');
+
+    document.getElementById('ram-status').innerText = `Asignado: ${ramGb} GB (${amountMb} MB)`;
+    localStorage.setItem('custom_ram_mb', amountMb);
+    localStorage.setItem('custom_ram_gb', ramGb);
+}
+
+function showCustomRam() {
+    const container = document.getElementById('custom-ram-input-container');
+    if (!container) return;
+    container.style.display = 'block';
+
+    document.querySelectorAll('.ram-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('btn-custom-ram').classList.add('active');
+}
+
+function updateCustomRam(value) {
+    const ramMb = parseInt(value, 10);
+    if (Number.isNaN(ramMb) || ramMb < 1024) return;
+
+    const ramGb = Math.max(2, Math.round(ramMb / 1024));
+    const ramFinal = document.getElementById('ram-final-value');
+    if (!ramFinal) return;
+    ramFinal.value = ramGb;
+    document.getElementById('ram-status').innerText = `Asignado: ${ramGb} GB (${ramMb} MB)`;
+    localStorage.setItem('custom_ram_mb', ramMb);
+    localStorage.setItem('custom_ram_gb', ramGb);
+}
+
+function loadRamConfig() {
+    const savedMb = localStorage.getItem('custom_ram_mb');
+    const savedGb = localStorage.getItem('custom_ram_gb');
+    const ramFinal = document.getElementById('ram-final-value');
+
+    if (!ramFinal) return;
+
+    if (savedMb && ['2048','4096','6144'].includes(savedMb)) {
+        const presetButton = document.querySelector(`button[onclick*="${savedMb}"]`);
+        if (presetButton) {
+            setRamPreset(parseInt(savedMb, 10), presetButton);
+            return;
+        }
     }
 
-    // Guardar si el usuario lo cambia
-    ramInput.addEventListener('change', () => {
-        localStorage.setItem('custom_ram', ramInput.value);
-    });
+    if (savedMb && savedGb) {
+        showCustomRam();
+        document.getElementById('ram-custom-value').value = savedMb;
+        ramFinal.value = savedGb;
+        document.getElementById('ram-status').innerText = `Asignado: ${savedGb} GB (${savedMb} MB)`;
+        return;
+    }
+
+    // Default
+    setRamPreset(4096, document.querySelector('button[onclick*="4096"]'));
 }
+
+window.setRamPreset = setRamPreset;
+window.showCustomRam = showCustomRam;
+window.updateCustomRam = updateCustomRam;
+window.loadRamConfig = loadRamConfig;
 
 // --- CONFIGURACIÓN DEL NOMBRE DE USUARIO ---
 const usernameInput = document.getElementById('offline-name');
@@ -5243,15 +5327,109 @@ window.renderizarSkin3D = renderizarSkin3D;
 window.saveSkinToLibrary = saveSkinToLibrary;
 
 // 3. LOGICA AL INICIAR (Para que salgan las versiones primero)
-document.addEventListener('DOMContentLoaded', () => {
-    // Forzamos que la primera pantalla sea 'play'
-    if (typeof showSection === 'function') {
-        window.showSection('play');
-    }
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('Renderer cargado');
 
-    // Si tienes una skin guardada, la cargamos en 3D
-    const ultimaSkin = localStorage.getItem('last_skin_url');
-    if (ultimaSkin && typeof window.renderizarSkin3D === 'function') {
-        window.renderizarSkin3D(ultimaSkin);
+    try {
+        await loadLauncherConfig();
+        loadRamConfig();
+        loadStatusBar();
+        loadVersionList();
+        loadInstalledVersions();
+
+        // Aplicar color y idioma guardados
+        const savedColor = localStorage.getItem('azureAccentColor') || localStorage.getItem('themeColor') || localStorage.getItem('launcher-accent');
+        if (savedColor) {
+            setLauncherAccent(savedColor);
+        }
+        const savedLang = getCurrentLanguage();
+        applyTranslations(savedLang);
+
+        // Event listeners
+        const btnMinecraft = document.getElementById('btn-browse-minecraft');
+        if (btnMinecraft) btnMinecraft.addEventListener('click', selectMinecraftDirectory);
+        const btnJava = document.getElementById('btn-browse-java');
+        if (btnJava) btnJava.addEventListener('click', selectJavaExecutable);
+        const btnPlayMain = document.getElementById('btn-play-main');
+        if (btnPlayMain) {
+            btnPlayMain.addEventListener('click', lanzarJuego);
+            btnPlayMain.disabled = false;
+        }
+        window.lanzarJuego = lanzarJuego;
+
+        // Iniciar servicios
+        startFriendsRealtimeSync();
+        actualizarTopUI();
+        escucharTransferencias();
+        initSkinViewer();
+        updateDiscordStatus('En el menú');
+
+        // File input for skin upload
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.addEventListener('change', e => {
+                currentSkinFile = e.target.files[0];
+                if (currentSkinFile) {
+                    const url = URL.createObjectURL(currentSkinFile);
+                    skinViewer.loadSkin(url, { model: currentModel });
+                }
+            });
+        }
+
+        // Decisión de pantalla inicial
+        const accounts = getStoredAccounts();
+        let saved = null;
+        let account = null;
+
+        try {
+            saved = JSON.parse(localStorage.getItem('current_account') || 'null');
+        } catch (err) {
+            console.warn('current_account inválido, se limpiará:', err);
+            localStorage.removeItem('current_account');
+        }
+
+        if (saved) {
+            const normalizedSaved = normalizeAccount(saved);
+            if (normalizedSaved) {
+                account = accounts.find((acc) => acc.name.toLowerCase() === normalizedSaved.name.toLowerCase()) || normalizedSaved;
+            }
+        }
+
+        const favoriteAccount = accounts.length > 1
+            ? accounts.find((acc) => acc.isFavorite)
+            : null;
+
+        const shouldAutoLogin = () => {
+            if (accounts.length === 1) return true;
+            if (favoriteAccount) return true;
+            return false;
+        };
+
+        if (!account && shouldAutoLogin()) {
+            account = favoriteAccount || accounts[0];
+        }
+
+        if (account && shouldAutoLogin()) {
+            currentAccount = account;
+            selectAccount(account, {
+                updateList: false,
+                closeModal: false
+            });
+            loadAccounts();
+            showScreen('screen-dashboard');
+            showSection('play');
+        } else if (accounts.length > 0) {
+            console.log('Mostrando selector de cuentas');
+            showScreen('screen-account-selector');
+        } else {
+            console.log('Mostrando login');
+            showScreen('screen-login-choice');
+        }
+    } catch (err) {
+        console.error('Error iniciando launcher:', err);
+        showScreen('screen-account-selector');
+    } finally {
+        const splash = document.getElementById('screen-splash');
+        if (splash) splash.classList.remove('active');
     }
 });

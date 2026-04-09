@@ -31,6 +31,7 @@ app.on('second-instance', () => {
 const configPath = path.join(__dirname, 'config.json');
 let config = {
     minecraftPath: path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), '.minecraft'),
+    javaPath: '',
     disableGPU: true
 };
 
@@ -53,7 +54,7 @@ if (gpuDisabled) {
 }
 
 // Instancia global de Minecraft
-let mcFolder = new MinecraftFolder(config.minecraftPath);
+let mcFolder;
 
 // Función para detectar automáticamente el directorio de Minecraft
 function detectMinecraftPath() {
@@ -95,6 +96,8 @@ if (fs.existsSync(configPath)) {
     config.minecraftPath = detectMinecraftPath();
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
+
+mcFolder = new MinecraftFolder(config.minecraftPath);
 
 // Si por alguna razón el directorio no existe, creamos carpeta .minecraft base para evitar fallos
 try {
@@ -382,6 +385,11 @@ function getAllInstallations() {
 
 // Detectar Java automáticamente
 function detectJavaVersion() {
+    if (config.javaPath && fs.existsSync(config.javaPath)) {
+        console.log(`Java detectado desde configuración: ${config.javaPath}`);
+        return config.javaPath;
+    }
+
     const possibleJavas = [
         'C:\\Program Files\\Java\\jdk-21\\bin\\javaw.exe',
         'C:\\Program Files\\Java\\jdk-17\\bin\\javaw.exe',
@@ -391,7 +399,8 @@ function detectJavaVersion() {
     ];
 
     for (const javaPath of possibleJavas) {
-        if (fs.existsSync(javaPath) || javaPath === 'javaw.exe') {
+        if (fs.existsSync(javaPath)) {
+            console.log(`Java detectado automáticamente: ${javaPath}`);
             return javaPath;
         }
     }
@@ -1229,6 +1238,20 @@ function createWindow() {
     });
 }
 
+// Version icon functions
+const fsExtra = require('fs-extra');
+
+async function saveVersionIcon(version, iconPath) {
+    const dest = path.join(launcherConfig.minecraftPath || detectMinecraftPath(), 'versions', version, 'icon.png');
+    await fsExtra.ensureDir(path.dirname(dest));
+    await fsExtra.copy(iconPath, dest);
+}
+
+function getVersionIcon(version) {
+    const iconPath = path.join(launcherConfig.minecraftPath || detectMinecraftPath(), 'versions', version, 'icon.png');
+    return fs.existsSync(iconPath) ? iconPath : null;
+}
+
 app.whenReady().then(() => {
     app.setAppUserModelId('com.azure.launcher');
     createWindow();
@@ -1440,6 +1463,17 @@ ipcMain.handle('get-window-state', () => ({
     isMaximized: mainWindow ? mainWindow.isMaximized() : false
 }));
 
+ipcMain.handle('get-version-icon', (_event, version) => {
+    const minecraftDir = config.minecraftPath || path.join(os.homedir(), '.minecraft');
+    const iconPath = path.join(minecraftDir, 'versions', version, 'icon.png');
+
+    if (fs.existsSync(iconPath)) {
+        return iconPath;
+    }
+
+    return null; // Renderer will use default
+});
+
 ipcMain.handle('export-skin', async (_event, { imageData, username }) => {
     const { filePath } = await dialog.showSaveDialog({
         title: 'Exportar Skin de Minecraft',
@@ -1545,12 +1579,20 @@ ipcMain.handle('login-microsoft', async () => {
         };
     }
 });
+
 ipcMain.handle('set-minecraft-path', (event, newPath) => {
     config.minecraftPath = newPath;
     saveConfig();
-    // Reiniciar rootPath
-    // Nota: Para que tome efecto, el usuario debe reiniciar el launcher
+    mcFolder = new MinecraftFolder(config.minecraftPath);
     sendToRenderer('config-updated', { minecraftPath: newPath });
+    return newPath;
+});
+
+ipcMain.handle('set-java-path', (event, newPath) => {
+    config.javaPath = newPath;
+    saveConfig();
+    sendToRenderer('config-updated', { javaPath: newPath });
+    return newPath;
 });
 
 ipcMain.on('save-gpu-setting', (_event, isDisabled) => {

@@ -1,5 +1,6 @@
 const { ipcRenderer, clipboard, nativeImage } = require('electron');
 const ipc = ipcRenderer;
+let launcherConfig = {};
 
 // skinview3d se carga desde CDN en index.html (window.skinview3d). No usar require() en Electron renderer por incompatibilidades ESM.
 
@@ -28,6 +29,53 @@ let pendingDeleteVersionId = null; // ID de la instalación pendiente de elimina
 let pendingDeleteIndex = null; // ID de cuenta (método viejo)
 let pendingConfirmAction = null;
 let pendingIconProfileId = null;
+
+async function loadLauncherConfig() {
+    try {
+        const config = await ipc.invoke('get-config');
+        launcherConfig = config || {};
+        const mcInput = document.getElementById('minecraft-path-input');
+        const javaInput = document.getElementById('java-path-input');
+        const mcMsg = document.getElementById('minecraft-status-msg');
+        const javaMsg = document.getElementById('java-status-msg');
+
+        if (mcInput && config?.minecraftPath) mcInput.value = config.minecraftPath;
+        if (javaInput && config?.javaPath) javaInput.value = config.javaPath;
+        if (mcMsg) mcMsg.innerText = config?.minecraftPath ? `Ruta .minecraft detectada: ${config.minecraftPath}` : 'El launcher detectará automáticamente tu carpeta .minecraft.';
+        if (javaMsg) javaMsg.innerText = config?.javaPath ? `Java detectado: ${config.javaPath}` : 'El launcher detectará automáticamente javaw.exe.';
+    } catch (error) {
+        console.error('Error cargando la configuración del launcher:', error);
+    }
+}
+
+async function selectMinecraftDirectory() {
+    const selected = await ipc.invoke('select-directory');
+    if (!selected) return;
+    const lower = selected.toLowerCase();
+    if (!lower.includes('.minecraft') && !lower.endsWith('minecraft')) {
+        showToast('Debes seleccionar la carpeta .minecraft correcta');
+        return;
+    }
+    await ipc.invoke('set-minecraft-path', selected);
+    showToast('Carpeta .minecraft actualizada');
+}
+
+async function selectJavaExecutable() {
+    const selected = await ipc.invoke('select-java');
+    if (!selected) return;
+    if (!selected.toLowerCase().endsWith('javaw.exe')) {
+        showToast('Debes seleccionar el ejecutable javaw.exe');
+        return;
+    }
+    await ipc.invoke('set-java-path', selected);
+    showToast('Ruta de Java actualizada');
+}
+
+ipc.on('config-updated', (_event, data) => {
+    if (data.minecraftPath || data.javaPath) {
+        loadLauncherConfig();
+    }
+});
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 // const FIREBASE_CONFIG = {
@@ -2025,6 +2073,14 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         loadVersionList();
         loadInstalledVersions();
+
+        const btnPlayMain = document.getElementById('btn-play-main');
+        if (btnPlayMain) {
+            btnPlayMain.addEventListener('click', lanzarJuego);
+            btnPlayMain.disabled = false;
+        }
+        window.lanzarJuego = lanzarJuego;
+
         updateDiscordStatus('En el menú');
         startFriendsRealtimeSync();
         actualizarTopUI();
@@ -4633,6 +4689,20 @@ async function renderVersionsUI() {
 
         container.appendChild(div);
     });
+
+    // Seleccionar automáticamente la primera versión si no hay ninguna seleccionada
+    if (!versionSeleccionada && merged.length > 0) {
+        const firstItem = merged[0];
+        versionSeleccionada = firstItem.version;
+        const playText = document.getElementById('play-button-text');
+        if (playText) playText.innerText = `JUGAR ${getVersionLabel(firstItem.version)}`;
+        // Marcar el primer item como activo (el segundo div, ya que el primero es "Crear instalación")
+        const versionItems = container.querySelectorAll('.version-item');
+        if (versionItems.length > 1) {
+            versionItems[1].classList.add('active'); // El índice 1 es el primer item de versión
+        }
+        showToast('Azure', `Versión seleccionada automáticamente: ${getVersionLabel(firstItem.version)}`, 'info');
+    }
 }
 
 async function openSkModal(profileId = null) {
@@ -5014,14 +5084,15 @@ function lanzarJuego() {
 
     // 1. PRIORIDAD: ¿Tiene Java esta versión? Si no, ¿Tiene el global? Si no, "java"
     const javaVersion = localStorage.getItem(`java_path_${versionSeleccionada}`);
-    const javaGlobal = localStorage.getItem('custom_java_path');
+    const javaGlobal = localStorage.getItem('custom_java_path') || launcherConfig.javaPath;
     const javaInput = document.getElementById('java-path-input') || {}; // Ajusta si tienes un input para Java
     const finalJavaPath = javaVersion || javaGlobal || javaInput.value || "java";
 
     console.log(`Iniciando ${versionSeleccionada} con ${finalJavaPath}`);
 
     // Enviar al main.js para iniciar con auth data
-    const ramValue = document.getElementById('ram-input') ? document.getElementById('ram-input').value : 4;
+    const ramFinal = document.getElementById('ram-final-value');
+    const ramValue = ramFinal ? (ramFinal.value || '4') : '4';
 
     // Mostrar la pantalla de lanzamiento mientras Java se prepara
     const launchScreen = document.getElementById('launch-screen');
@@ -5146,19 +5217,74 @@ function toggleServerVisibility(ip) {
 }
 
 // --- CONFIGURACIÓN DE RAM ---
-const ramInput = document.getElementById('ram-input');
-if (ramInput) {
-    // Cargar RAM guardada o dejar 4 por defecto
-    const savedRam = localStorage.getItem('custom_ram');
-    if (savedRam) {
-        ramInput.value = savedRam;
+function setRamPreset(amountMb, element) {
+    const ramFinal = document.getElementById('ram-final-value');
+    if (!ramFinal) return;
+
+    const ramGb = Math.max(2, Math.round(amountMb / 1024));
+    ramFinal.value = ramGb;
+    document.getElementById('custom-ram-input-container').style.display = 'none';
+    document.querySelectorAll('.ram-btn').forEach(btn => btn.classList.remove('active'));
+    if (element) element.classList.add('active');
+
+    document.getElementById('ram-status').innerText = `Asignado: ${ramGb} GB (${amountMb} MB)`;
+    localStorage.setItem('custom_ram_mb', amountMb);
+    localStorage.setItem('custom_ram_gb', ramGb);
+}
+
+function showCustomRam() {
+    const container = document.getElementById('custom-ram-input-container');
+    if (!container) return;
+    container.style.display = 'block';
+
+    document.querySelectorAll('.ram-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('btn-custom-ram').classList.add('active');
+}
+
+function updateCustomRam(value) {
+    const ramMb = parseInt(value, 10);
+    if (Number.isNaN(ramMb) || ramMb < 1024) return;
+
+    const ramGb = Math.max(2, Math.round(ramMb / 1024));
+    const ramFinal = document.getElementById('ram-final-value');
+    if (!ramFinal) return;
+    ramFinal.value = ramGb;
+    document.getElementById('ram-status').innerText = `Asignado: ${ramGb} GB (${ramMb} MB)`;
+    localStorage.setItem('custom_ram_mb', ramMb);
+    localStorage.setItem('custom_ram_gb', ramGb);
+}
+
+function loadRamConfig() {
+    const savedMb = localStorage.getItem('custom_ram_mb');
+    const savedGb = localStorage.getItem('custom_ram_gb');
+    const ramFinal = document.getElementById('ram-final-value');
+
+    if (!ramFinal) return;
+
+    if (savedMb && ['2048','4096','6144'].includes(savedMb)) {
+        const presetButton = document.querySelector(`button[onclick*="${savedMb}"]`);
+        if (presetButton) {
+            setRamPreset(parseInt(savedMb, 10), presetButton);
+            return;
+        }
     }
 
-    // Guardar si el usuario lo cambia
-    ramInput.addEventListener('change', () => {
-        localStorage.setItem('custom_ram', ramInput.value);
-    });
+    if (savedMb && savedGb) {
+        showCustomRam();
+        document.getElementById('ram-custom-value').value = savedMb;
+        ramFinal.value = savedGb;
+        document.getElementById('ram-status').innerText = `Asignado: ${savedGb} GB (${savedMb} MB)`;
+        return;
+    }
+
+    // Default
+    setRamPreset(4096, document.querySelector('button[onclick*="4096"]'));
 }
+
+window.setRamPreset = setRamPreset;
+window.showCustomRam = showCustomRam;
+window.updateCustomRam = updateCustomRam;
+window.loadRamConfig = loadRamConfig;
 
 // --- CONFIGURACIÓN DEL NOMBRE DE USUARIO ---
 const usernameInput = document.getElementById('offline-name');
@@ -5226,6 +5352,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof showSection === 'function') {
         window.showSection('play');
     }
+
+    const btnMinecraft = document.getElementById('btn-browse-minecraft');
+    if (btnMinecraft) btnMinecraft.addEventListener('click', selectMinecraftDirectory);
+    const btnJava = document.getElementById('btn-browse-java');
+    if (btnJava) btnJava.addEventListener('click', selectJavaExecutable);
+    loadLauncherConfig();
+    loadRamConfig();
 
     // Si tienes una skin guardada, la cargamos en 3D
     const ultimaSkin = localStorage.getItem('last_skin_url');
