@@ -676,10 +676,6 @@ body {
     border-color: white;
 }
 
-.friends-panel {
-    display: none;
-}
-
 .friends-shell {
     display: flex;
     flex-direction: column;
@@ -1459,10 +1455,61 @@ body {
     flex-direction: column;
 }
 
-.news-container {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
+/* --- ESTILOS PARA NOVEDADES --- */
+
+/* Asegura que las secciones inactivas NO se vean (esto arregla que se superponga) */
+.content-section {
+    display: none;
+    height: 100%;
+}
+
+.content-section.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* El contenedor que hace el scroll */
+.news-scroll-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px; /* Espacio entre cada novedad */
+    overflow-y: auto; /* Activa el scroll vertical */
+    padding: 20px;
+    height: 100%;
+}
+
+/* Diseño de cada novedad individual */
+.news-card {
+    background: var(--glass); /* Usa el fondo transparente de tu theme */
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.news-title {
+    color: var(--text-main);
+    font-size: 1.8rem;
+    margin: 0;
+    text-align: center;
+    font-weight: bold;
+}
+
+.news-image {
+    width: 100%; /* Ocupa todo el ancho disponible */
+    max-height: 450px; /* Altura máxima para no ocupar toda la pantalla */
+    object-fit: cover; /* Recorta la imagen bonito si es muy ancha */
+    border-radius: 8px;
+    border: 2px solid rgba(var(--accent-rgb), 0.5); /* Borde con tu color azul */
+}
+
+.news-desc {
+    color: var(--text-gray);
+    font-size: 1.1rem;
+    line-height: 1.5;
+    margin: 0;
 }
 
 

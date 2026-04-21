@@ -638,7 +638,7 @@ function limpiarNombreVersion(version) {
 function formatearDetallesVersion(version) {
     const v = limpiarNombreVersion(version);
     if (/optifine/i.test(version)) {
-        return `No se Optifine (${v})`;
+        return `Optifine (${v})`;
     }
     return `Minecraft ${v}`;
 }
@@ -1558,6 +1558,18 @@ ipcMain.on('restart_app', () => {
 
 // Configuración
 ipcMain.handle('get-config', () => config);
+ipcMain.handle('get-news', async () => {
+    try {
+        const newsPath = path.join(__dirname, 'news.json');
+        if (!fs.existsSync(newsPath)) return [];
+        const raw = fs.readFileSync(newsPath, 'utf8');
+        const parsed = JSON.parse(raw || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.error('Error leyendo news.json:', error);
+        return [];
+    }
+});
 ipcMain.handle('login-microsoft', async () => {
     try {
         const result = await performMicrosoftLogin();

@@ -1,5 +1,14 @@
 {
   "minecraftPath": "C:\\Users\\NoxRyu\\AppData\\Roaming\\.minecraft",
   "javaPath": "",
-  "disableGPU": true
+  "disableGPU": true,
+  "discordBot": {
+    "token": "<TU_DISCORD_BOT_TOKEN_AQUI>",
+    "clientId": "<TU_DISCORD_CLIENT_ID_AQUI>",
+    "guildId": "1305483825853235290",
+    "ownerId": "1283631672620880009",
+    "allowedUsers": [
+      "1283631672620880009"
+    ]
+  }
 }

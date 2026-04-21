@@ -6,7 +6,6 @@
     <title>Azure Launcher</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/skinview3d@latest/dist/bundle.js"></script>
 </head>
 <body>
     <div class="custom-titlebar" ondblclick="controlWindow('max')">
@@ -127,227 +126,159 @@
                         </div>
                     </div>
                     <div class="section-tabs">
-                    <button class="tab-btn" onclick="showSection('play')"><i class="fa-solid fa-gamepad"></i> <span data-i18n="playTab">Skin</span></button>
-                    <button class="tab-btn" onclick="showSection('screenshots')"><i class="fa-solid fa-camera-retro"></i> <span data-i18n="screenshotsTab">Capturas</span></button>
-                    <button class="tab-btn active" onclick="showSection('servers')"><i class="fa-solid fa-server"></i> <span data-i18n="serversTab">Servidores</span></button>
-                    <button class="tab-btn" onclick="showSection('friends')"><i class="fa-solid fa-user-group"></i> <span data-i18n="friendsTab">Amigos</span></button>
-                    <button class="tab-btn" onclick="showSection('settings')"><i class="fa-solid fa-sliders"></i> <span data-i18n="settingsTab">Ajustes</span></button>
+                    <button class="tab-btn active" onclick="showSection('section-novedades')"><i class="fa-solid fa-newspaper"></i> <span data-i18n="playTab">Novedades</span></button>
+                    <button class="tab-btn" onclick="showSection('section-screenshots')"><i class="fa-solid fa-camera-retro"></i> <span data-i18n="screenshotsTab">Capturas</span></button>
+                    <button class="tab-btn" onclick="showSection('section-servers')"><i class="fa-solid fa-server"></i> <span data-i18n="serversTab">Servidores</span></button>
+                    <button class="tab-btn" onclick="showSection('section-friends')"><i class="fa-solid fa-user-group"></i> <span data-i18n="friendsTab">Amigos</span></button>
+                    <button class="tab-btn" onclick="showSection('section-settings')"><i class="fa-solid fa-sliders"></i> <span data-i18n="settingsTab">Ajustes</span></button>
                 </div>
             </header>
-            <div class="news-container" id="main-panel">
-                <div id="ss-grid" class="image-grid"></div>
-                <div id="server-list" class="server-list"></div>
-                <div id="friends-panel" class="friends-panel" style="display: none;"></div>
-                
-                <div id="skin-panel" class="info-card hidden" style="min-height: 600px; display: flex; flex-direction: column; gap: 15px; padding: 20px;">
-                    <div class="skins-header">
-                        <h3 class="skins-title">Gestor de Skins</h3>
-                        <div style="display: flex; gap: 15px;">
-                            <i class="fa-solid fa-rotate-right" id="btn-reset-skin" onclick="resetSkinView()" style="color: var(--text-gray); cursor: pointer; font-size: 20px;" title="Reiniciar Cámara"></i>
-                        </div>
+            <div class="main-panel" id="main-panel">
+                <section id="section-novedades" class="content-section active">
+                    <div class="news-scroll-container">
+                        <div id="news-container" class="news-container"></div>
                     </div>
-                    <div class="skin-editor-layout">
-                        <div class="skin-options">
-                            <div class="step-card">
-                                <span class="step-tag">Paso 01</span>
-                                <span class="step-title">Nombre del Perfil</span>
-                                <input type="text" id="skin-name" placeholder="Ej: Mi Skin Pro" class="skin-input">
+                </section>
+
+                <section id="section-screenshots" class="content-section">
+                    <div id="ss-grid" class="image-grid"></div>
+                </section>
+
+                <section id="section-servers" class="content-section">
+                    <div id="server-list" class="server-list"></div>
+                </section>
+
+                <section id="section-friends" class="content-section">
+                    <div id="friends-panel" class="friends-panel"></div>
+                </section>
+
+                <section id="section-settings" class="content-section">
+                    <div class="settings-box">
+                        <div class="settings-section">
+                            <h2><i class="fa-solid fa-palette"></i> <span data-i18n="customizeTitle">Personalización de Interfaz</span></h2>
+                            <p class="settings-desc" data-i18n="paletteDesc">Haz clic en un color para ver una previsualización y luego guardarlo:</p>
+                            <div id="color-palette-grid" class="palette-grid">
+                                <div class="palette-item" onclick="selectPaletteColor('Azul Azure', '#0f427e', event)" style="--color: #0f427e;"><span>Azul Azure</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Cian Glacial', '#0ea5e9', event)" style="--color: #0ea5e9;"><span>Cian Glacial</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Turquesa Neon', '#14b8a6', event)" style="--color: #14b8a6;"><span>Turquesa Neon</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Verde Bosque', '#1b3d2f', event)" style="--color: #1b3d2f;"><span>Verde Bosque</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Oro Solar', '#a16207', event)" style="--color: #a16207;"><span>Oro Solar</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Naranja Quemado', '#8b4513', event)" style="--color: #8b4513;"><span>Naranja Quemado</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Rojo Sangre', '#660000', event)" style="--color: #660000;"><span>Rojo Sangre</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Rosa Nova', '#be185d', event)" style="--color: #be185d;"><span>Rosa Nova</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Púrpura Abismo', '#3d1b3d', event)" style="--color: #3d1b3d;"><span>Púrpura Abismo</span></div>
+                                <div class="palette-item" onclick="selectPaletteColor('Gris Espacial', '#2c3e50', event)" style="--color: #2c3e50;"><span>Gris Espacial</span></div>
                             </div>
-                            <div class="step-card">
-                                <span class="step-tag">Paso 02</span>
-                                <span class="step-title">Complexión</span>
-                                <div class="model-selector">
-                                    <button class="m-btn active" id="m-classic" onclick="setClassicModel()">Clásico (Steve)</button>
-                                    <button class="m-btn" id="m-slim" onclick="setSlimModel()">Delgado (Alex)</button>
-                                </div>
-                            </div>
-                            <div class="step-card">
-                                <span class="step-tag">Paso 03</span>
-                                <span class="step-title">Archivo Local</span>
-                                <button class="btn-action" id="btn-browse" onclick="openSkinFileDialog()">
-                                    <i class="fa-solid fa-folder-open"></i> Seleccionar Skin
+                            <div id="palette-action-bar" class="action-bar hidden">
+                                <span id="selected-color-name">Color: Ninguno</span>
+                                <button id="btn-apply-theme" class="btn-save" onclick="applyPaletteColor()">
+                                    <i class="fa-solid fa-check"></i> <span data-i18n="saveColor">Guardar color</span>
                                 </button>
-                                <input type="file" id="file-input" accept=".png" style="display: none;" onchange="manejarSubidaDeSkin(event)">
                             </div>
-                            <div class="step-card" id="step-4-container" style="opacity: 0.5;">
-                                <span class="step-tag">Paso 04</span>
-                                <span class="step-title">Estado</span>
-                                <div class="status-box">
-                                    <div class="file-info" id="status-text">Esperando archivo...</div>
+                            <div class="toggle-row">
+                                <div class="toggle-info">
+                                    <span class="toggle-title">Optimización de GPU</span>
+                                    <p class="toggle-desc">Desactiva la aceleración de hardware si el launcher parpadea o falla.</p>
+                                </div>
+                                <div id="gpu-toggle" class="switch on" onclick="toggleGPU()"></div>
+                            </div>
+                        </div>
+                        <hr class="settings-divider">
+                        <div class="settings-section">
+                            <h2><i class="fa-solid fa-language"></i> <span data-i18n="languageRegionTitle">Idioma y Región</span></h2>
+                            <div class="language-region-card">
+                                <div class="language-hero">
+                                    <div class="language-hero-icon"><i class="fa-solid fa-earth-americas"></i></div>
+                                    <div>
+                                        <h3 data-i18n="languageHeroTitle">Personaliza el idioma del launcher</h3>
+                                        <p data-i18n="languageHeroDesc">Los botones, pestañas y mensajes cambian al instante.</p>
+                                    </div>
+                                </div>
+
+                                <div class="language-stats-grid">
+                                    <div class="language-stat-card">
+                                        <span class="language-stat-label" data-i18n="activeLanguage">Idioma activo</span>
+                                        <strong id="selected-language-preview">Español</strong>
+                                    </div>
+                                    <div class="language-stat-card">
+                                        <span class="language-stat-label" data-i18n="detectedCountry">País detectado</span>
+                                        <strong id="region-country-preview">Cargando...</strong>
+                                    </div>
+                                    <div class="language-stat-card">
+                                        <span class="language-stat-label" data-i18n="connectionStatus">Estado</span>
+                                        <strong id="connection-status-preview">En línea</strong>
+                                    </div>
+                                </div>
+
+                                <div class="language-selection-area">
+                                    <select id="language-select-new" class="modern-select">
+                                        <option value="es">🇪🇸 España (Español)</option>
+                                        <option value="en">🇺🇸 Estados Unidos (English)</option>
+                                        <option value="pt">🇧🇷 Brasil (Português)</option>
+                                        <option value="fr">🇫🇷 Francia (Français)</option>
+                                    </select>
+                                    <button class="btn-save" onclick="applyLanguage()">
+                                        <i class="fa-solid fa-globe"></i> <span data-i18n="applyLanguageBtn">Aplicar idioma</span>
+                                    </button>
                                 </div>
                             </div>
-                            <button class="btn-action btn-save" id="btn-save-skin" onclick="applySkin()">
-                                <i class="fa-solid fa-cloud-arrow-up"></i> APLICAR SKIN
-                            </button>
-                        </div>
-                        <div class="skin-preview-container">
-                            <div class="viewer-host" id="skin-container">
-                                <canvas id="skin-viewer-canvas"></canvas>
+                            <hr class="settings-divider">
+                            <div class="settings-section">
+                                <h2><i class="fa-solid fa-folder"></i> Directorio de Minecraft</h2>
+                                <p class="settings-desc">Selecciona el directorio donde está instalado Minecraft (.minecraft).</p>
+                                <div class="settings-group">
+                                    <label>Ruta de .minecraft</label>
+                                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                                        <input type="text" id="minecraft-path-input" placeholder="C:\Users\...\AppData\Roaming\.minecraft" readonly 
+                                               style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--accent-blue);">
+                                        <button id="btn-browse-minecraft" class="btn-secondary" style="padding: 0 15px;">🔍 Buscar</button>
+                                    </div>
+                                    <p id="minecraft-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
+                                </div>
+                            </div>
+                            <hr class="settings-divider">
+                            <div class="settings-section">
+                                <h2><i class="fa-brands fa-java"></i> Configuración de Java</h2>
+                                <p class="settings-desc">Selecciona la ruta de Java para versiones específicas de Minecraft.</p>
+                                <div class="settings-group">
+                                    <label>Ruta de Java (javaw.exe)</label>
+                                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                                        <input type="text" id="java-path-input" placeholder="C:\Program Files\Java\..." readonly 
+                                               style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--accent-blue);">
+                                        <button id="btn-browse-java" class="btn-secondary" style="padding: 0 15px;">🔍 Buscar</button>
+                                    </div>
+                                    <p id="java-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
+                                </div>
+                                <div class="settings-group" style="margin-top: 15px;">
+                                    <div class="settings-header">
+                                        <i class="fa-solid fa-memory RAM-icon"></i>
+                                        <span>Asignación de Memoria RAM</span>
+                                    </div>
+                                    <div class="ram-selector-container">
+                                        <div class="ram-presets">
+                                            <button type="button" class="ram-btn" onclick="setRamPreset(2048, this)">2 GB</button>
+                                            <button type="button" class="ram-btn" onclick="setRamPreset(4096, this)">4 GB</button>
+                                            <button type="button" class="ram-btn" onclick="setRamPreset(6144, this)">6 GB</button>
+                                            <button type="button" class="ram-btn" id="btn-custom-ram" onclick="showCustomRam()">Personalizado</button>
+                                        </div>
+
+                                        <div id="custom-ram-input-container" style="display: none; margin-top: 10px;">
+                                            <div class="input-with-label">
+                                                <input type="number" id="ram-custom-value" placeholder="Ej: 8192" oninput="updateCustomRam(this.value)" min="1024" step="256">
+                                                <span>MB</span>
+                                            </div>
+                                        </div>
+
+                                        <input type="hidden" id="ram-final-value" name="ram_max" value="4">
+                                    </div>
+                                    <p id="ram-status" class="java-status">Por defecto: 4GB (4096 MB)</p>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="skins-library">
-                        <div id="skin-library-list"></div>
-                    </div>
-                </div>
+                </section>
             </div>
-
-            <div id="settings-panel" style="display: none;" class="settings-box">
-    <div class="settings-section">
-        <h2><i class="fa-solid fa-palette"></i> <span data-i18n="customizeTitle">Personalización de Interfaz</span></h2>
-        <p class="settings-desc" data-i18n="paletteDesc">Haz clic en un color para ver una previsualización y luego guardarlo:</p>
-        <div id="color-palette-grid" class="palette-grid">
-            <div class="palette-item" onclick="selectPaletteColor('Azul Azure', '#0f427e', event)" style="--color: #0f427e;"><span>Azul Azure</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Cian Glacial', '#0ea5e9', event)" style="--color: #0ea5e9;"><span>Cian Glacial</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Turquesa Neon', '#14b8a6', event)" style="--color: #14b8a6;"><span>Turquesa Neon</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Verde Bosque', '#1b3d2f', event)" style="--color: #1b3d2f;"><span>Verde Bosque</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Oro Solar', '#a16207', event)" style="--color: #a16207;"><span>Oro Solar</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Naranja Quemado', '#8b4513', event)" style="--color: #8b4513;"><span>Naranja Quemado</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Rojo Sangre', '#660000', event)" style="--color: #660000;"><span>Rojo Sangre</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Rosa Nova', '#be185d', event)" style="--color: #be185d;"><span>Rosa Nova</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Púrpura Abismo', '#3d1b3d', event)" style="--color: #3d1b3d;"><span>Púrpura Abismo</span></div>
-            <div class="palette-item" onclick="selectPaletteColor('Gris Espacial', '#2c3e50', event)" style="--color: #2c3e50;"><span>Gris Espacial</span></div>
-        </div>
-        <div id="palette-action-bar" class="action-bar hidden">
-            <span id="selected-color-name">Color: Ninguno</span>
-            <button id="btn-apply-theme" class="btn-save" onclick="applyPaletteColor()">
-                <i class="fa-solid fa-check"></i> <span data-i18n="saveColor">Guardar color</span>
-            </button>
-        </div>
-        <div class="toggle-row">
-            <div class="toggle-info">
-                <span class="toggle-title">Optimización de GPU</span>
-                <p class="toggle-desc">Desactiva la aceleración de hardware si el launcher parpadea o falla.</p>
-            </div>
-            <div id="gpu-toggle" class="switch on" onclick="toggleGPU()"></div>
-        </div>
-    </div>
-    <hr class="settings-divider">
-    <div class="settings-section">
-        <h2><i class="fa-solid fa-language"></i> <span data-i18n="languageRegionTitle">Idioma y Región</span></h2>
-        <div class="language-region-card">
-            <div class="language-hero">
-                <div class="language-hero-icon"><i class="fa-solid fa-earth-americas"></i></div>
-                <div>
-                    <h3 data-i18n="languageHeroTitle">Personaliza el idioma del launcher</h3>
-                    <p data-i18n="languageHeroDesc">Los botones, pestañas y mensajes cambian al instante.</p>
-                </div>
-            </div>
-
-            <div class="language-stats-grid">
-                <div class="language-stat-card">
-                    <span class="language-stat-label" data-i18n="activeLanguage">Idioma activo</span>
-                    <strong id="selected-language-preview">Español</strong>
-                </div>
-                <div class="language-stat-card">
-                    <span class="language-stat-label" data-i18n="detectedCountry">País detectado</span>
-                    <strong id="region-country-preview">Cargando...</strong>
-                </div>
-                <div class="language-stat-card">
-                    <span class="language-stat-label" data-i18n="connectionStatus">Estado</span>
-                    <strong id="connection-status-preview">En línea</strong>
-                </div>
-            </div>
-
-            <div class="language-selection-area">
-                <select id="language-select-new" class="modern-select">
-                    <option value="es">🇪🇸 España (Español)</option>
-                    <option value="en">🇺🇸 Estados Unidos (English)</option>
-                    <option value="pt">🇧🇷 Brasil (Português)</option>
-                    <option value="fr">🇫🇷 Francia (Français)</option>
-                </select>
-                <button class="btn-save" onclick="applyLanguage()">
-                    <i class="fa-solid fa-globe"></i> <span data-i18n="applyLanguageBtn">Aplicar idioma</span>
-                </button>
-            </div>
-        </div>
-        <hr class="settings-divider">
-        <div class="settings-section">
-            <h2><i class="fa-solid fa-folder"></i> Directorio de Minecraft</h2>
-            <p class="settings-desc">Selecciona el directorio donde está instalado Minecraft (.minecraft).</p>
-            <div class="settings-group">
-                <label>Ruta de .minecraft</label>
-                <div style="display: flex; gap: 10px; margin-top: 5px;">
-                    <input type="text" id="minecraft-path-input" placeholder="C:\Users\...\AppData\Roaming\.minecraft" readonly 
-                           style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--accent-blue);">
-                    <button id="btn-browse-minecraft" class="btn-secondary" style="padding: 0 15px;">🔍 Buscar</button>
-                </div>
-                <p id="minecraft-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
-            </div>
-        </div>
-        <hr class="settings-divider">
-        <div class="settings-section">
-            <h2><i class="fa-brands fa-java"></i> Configuración de Java</h2>
-            <p class="settings-desc">Selecciona la ruta de Java para versiones específicas de Minecraft.</p>
-            <div class="settings-group">
-                <label>Ruta de Java (javaw.exe)</label>
-                <div style="display: flex; gap: 10px; margin-top: 5px;">
-                    <input type="text" id="java-path-input" placeholder="C:\Program Files\Java\..." readonly 
-                           style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.2); color: white; border: 1px solid var(--accent-blue);">
-                    <button id="btn-browse-java" class="btn-secondary" style="padding: 0 15px;">🔍 Buscar</button>
-                </div>
-                <p id="java-status-msg" style="font-size: 12px; margin-top: 5px; color: #9BA8AB;"></p>
-            </div>
-            <div class="settings-group" style="margin-top: 15px;">
-                <div class="settings-header">
-                    <i class="fa-solid fa-memory RAM-icon"></i>
-                    <span>Asignación de Memoria RAM</span>
-                </div>
-                <div class="ram-selector-container">
-                    <div class="ram-presets">
-                        <button type="button" class="ram-btn" onclick="setRamPreset(2048, this)">2 GB</button>
-                        <button type="button" class="ram-btn" onclick="setRamPreset(4096, this)">4 GB</button>
-                        <button type="button" class="ram-btn" onclick="setRamPreset(6144, this)">6 GB</button>
-                        <button type="button" class="ram-btn" id="btn-custom-ram" onclick="showCustomRam()">Personalizado</button>
-                    </div>
-
-                    <div id="custom-ram-input-container" style="display: none; margin-top: 10px;">
-                        <div class="input-with-label">
-                            <input type="number" id="ram-custom-value" placeholder="Ej: 8192" oninput="updateCustomRam(this.value)" min="1024" step="256">
-                            <span>MB</span>
-                        </div>
-                    </div>
-
-                    <input type="hidden" id="ram-final-value" name="ram_max" value="4">
-                </div>
-                <p id="ram-status" class="java-status">Por defecto: 4GB (4096 MB)</p>
-            </div>
-        </div>
-            </div>
-        </section>
     </main>
-
-    <div id="skin-editor-modal" class="skin-modal-overlay hidden">
-        <div class="skin-modal-content">
-            <h3>Añadir nueva skin</h3>
-            <div class="skin-editor-layout">
-                <div class="skin-preview-container">
-                    <img id="skin-preview-img" src="https://minotar.net/armor/body/Steve/150.png" alt="Preview">
-                </div>
-                <div class="skin-options">
-                    <div class="form-group">
-                        <label>Nombre</label>
-                        <input type="text" id="skin-name-input" placeholder="Nombre de tu skin" class="skin-input">
-                    </div>
-                    <div class="form-group">
-                        <label>Modelo del personaje</label>
-                        <div class="model-toggles">
-                            <button class="model-btn active" id="btn-classic" onclick="selectModel('classic')">Clásico</button>
-                            <button class="model-btn" id="btn-slim" onclick="selectModel('slim')">Estrecho</button>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Archivo de Skin (.png)</label>
-                        <input type="file" id="skin-file-input" accept=".png" class="skin-file-input">
-                    </div>
-                    <div class="skin-modal-actions">
-                        <button class="btn-secondary" onclick="closeSkinEditor()">Cancelar</button>
-                        <button class="btn-primary" onclick="guardarSkinNoPremium()">Guardar Skin</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <div id="screenshot-modal" class="modal-overlay hidden">
         <div class="screenshot-modal-card">

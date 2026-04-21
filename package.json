@@ -1,6 +1,6 @@
 {
   "name": "azure-launcher",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Azure Luncher",
   "main": "main.js",
   "scripts": {
@@ -32,8 +32,10 @@
     "msmc": "^5.0.5",
     "prismarine-nbt": "^2.8.0",
     "sharp": "^0.34.5",
-    "skinview3d": "^3.4.1",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "discord.js": "^14.15.1",
+    "@discordjs/rest": "^1.6.0",
+    "discord-api-types": "^0.37.51"
   },
   "devDependencies": {
     "electron": "^25.9.8",
@@ -46,6 +48,9 @@
     "directories": {
       "output": "dist"
     },
+    "npmRebuild": true,
+    "nodeGypRebuild": false,
+    "detectUpdateChannel": false,
     "toolsets": {
       "winCodeSign": "1.0.0"
     },

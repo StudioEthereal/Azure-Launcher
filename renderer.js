@@ -2,8 +2,6 @@ const { ipcRenderer, clipboard, nativeImage } = require('electron');
 const ipc = ipcRenderer;
 let launcherConfig = {};
 
-// skinview3d se carga desde CDN en index.html (window.skinview3d). No usar require() en Electron renderer por incompatibilidades ESM.
-
 // --- CONFIGURACIÓN DE FIREBASE ---
 const FIREBASE_CONFIG = {
     apiKey: 'AIzaSyCrNo2X1qyL5fs-daXIPGZVsC7mqiJqVRU',
@@ -35,11 +33,6 @@ let pendingDeleteVersionId = null; // ID de la instalación pendiente de elimina
 let pendingDeleteIndex = null; // ID de cuenta (método viejo)
 let pendingConfirmAction = null;
 let pendingIconProfileId = null;
-
-// Skin viewer variables
-let skinViewer;
-let currentSkinFile = null;
-let currentModel = "default";
 
 async function loadLauncherConfig() {
     try {
@@ -88,147 +81,6 @@ ipc.on('config-updated', (_event, data) => {
     }
 });
 
-// Skin viewer variables
-
-// Cape variables
-let currentCapeFile = null;
-
-// Initialize skin viewer
-// initSkinViewer duplicado eliminado
-// initSkinViewer duplicado eliminado
-// Handle skin upload (solo offline)
-function manejarSubidaDeSkin(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (!currentAccount) {
-        console.warn("No hay cuenta actual, no se puede subir skin");
-        return;
-    }
-
-    if (currentAccount.type !== 'offline') {
-        console.warn("Solo usuarios offline pueden subir skins personalizadas");
-        return;
-    }
-
-    // Verificar Discord vinculado (opcional)
-    const discordId = localStorage.getItem('discord_user_id');
-    if (!discordId) {
-        console.warn("Se recomienda vincular Discord para subir skins");
-        // No bloquear
-    }
-
-    const url = URL.createObjectURL(file);
-    currentSkinPath = url;
-    currentSkinFile = file;
-
-    skinViewer.loadSkin(url);
-
-    document.getElementById("status-text").textContent = "Skin cargada correctamente";
-    document.getElementById("step-4-container").style.opacity = "1";
-}
-
-// Upload skin to Firebase (sin llamar login)
-async function uploadSkinLocal(file) {
-    if (!currentAccount || currentAccount.type !== 'offline') {
-        alert("Solo usuarios offline pueden subir skins");
-        return;
-    }
-
-    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage || !window.fbStorageRef || !window.fbUploadBytes || !window.fbGetDownloadURL) {
-        alert('Firebase no está disponible. La skin no puede subirse en este momento.');
-        return;
-    }
-
-    const uuid = currentAccount.uuid || crypto.randomUUID();
-    if (!currentAccount.uuid) {
-        currentAccount.uuid = uuid;
-        saveStoredAccounts();
-    }
-
-    const storageReference = window.fbStorageRef(window.fbStorage, `skins/${uuid}.png`);
-    await window.fbUploadBytes(storageReference, file);
-    const url = await window.fbGetDownloadURL(storageReference);
-
-    await firebaseFns.update(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
-        ...await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`)).then(s => s.val() || {}),
-        username: currentAccount.name,
-        type: 'offline',
-        discordId: localStorage.getItem('discord_user_id') || null,
-        skinUrl: url,
-        model: currentModel,
-        updated: Date.now()
-    });
-
-    skinViewer.loadSkin(url, { model: currentModel || 'default' });
-    document.getElementById("status-text").textContent = "Skin subida a Firebase correctamente";
-}
-
-// Save offline skin to Firebase
-async function saveOfflineSkin(uuid, file) {
-    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage) return;
-
-    const storageRef = window.fbStorageRef(window.fbStorage, `skins/${uuid}.png`);
-    await window.fbUploadBytes(storageRef, file);
-    const url = await window.fbGetDownloadURL(storageRef);
-
-    await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
-        type: "offline",
-        skinUrl: url,
-        model: currentModel,
-        updatedAt: Date.now()
-    });
-
-    skinViewer.loadSkin(url, { model: currentModel });
-}
-
-// Load user skin (premium or Firebase)
-async function loadUserSkin(uuid, accountType = 'premium') {
-    if (firebaseReady && firebaseDb && firebaseFns) {
-        const snapshot = await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`));
-        if (snapshot.exists()) {
-            const data = snapshot.val();
-            if (data?.skinUrl) {
-                skinViewer.loadSkin(data.skinUrl, { model: data.model || 'default' });
-                return;
-            }
-        }
-    }
-
-    if (accountType === 'offline') {
-        loadOfflineSkin();
-        return;
-    }
-
-    loadPremiumSkin(uuid);
-}
-
-function loadOfflineSkin() {
-    skinViewer.loadSkin('https://minotar.net/skin/Steve');
-}
-
-
-// Set model functions
-function setClassicModel() {
-    currentModel = "default";
-    skinViewer.loadSkin(currentSkinPath, {
-        model: "default"
-    });
-
-    document.getElementById("m-classic").classList.add("active");
-    document.getElementById("m-slim").classList.remove("active");
-}
-
-function setSlimModel() {
-    currentModel = "slim";
-    skinViewer.loadSkin(currentSkinPath, {
-        model: "slim"
-    });
-
-    document.getElementById("m-classic").classList.remove("active");
-    document.getElementById("m-slim").classList.add("active");
-}
-
 // Get version icon path (via IPC)
 async function getVersionIcon(version) {
     try {
@@ -245,131 +97,6 @@ async function updateVersionIcon(version) {
     const iconElement = document.getElementById('version-icon');
     if (iconElement) {
         iconElement.src = await getVersionIcon(version);
-    }
-}
-
-// Load current account skin into viewer
-async function loadSkinForAccount(account) {
-    if (!account) return;
-    if (!skinViewer) {
-        console.warn('Skin viewer no está listo, reintentando carga de skin...');
-        setTimeout(() => loadSkinForAccount(account), 500);
-        return;
-    }
-
-    const uuid = account.uuid || account.username;
-
-    if (account.type === "premium") {
-        const url = `https://crafatar.com/skins/${uuid}`;
-        skinViewer.loadSkin(url, { model: "default" });
-        return;
-    }
-
-    // Offline: buscar en Firebase
-    if (firebaseReady && firebaseDb && firebaseFns) {
-        try {
-            const snapshot = await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`));
-            if (snapshot.exists()) {
-                const data = snapshot.val();
-                skinViewer.loadSkin(data.skinUrl, { model: data.model || "default" });
-            } else {
-                skinViewer.loadSkin("https://minotar.net/skin/Steve");
-            }
-        } catch (error) {
-            console.error("Error cargando skin offline:", error);
-            skinViewer.loadSkin("https://minotar.net/skin/Steve");
-        }
-    } else {
-        skinViewer.loadSkin("https://minotar.net/skin/Steve");
-    }
-}
-
-// Upload offline skin
-async function uploadOfflineSkin(account) {
-    if (!currentSkinFile || !account) return;
-
-    const uuid = account.uuid || account.username;
-
-    if (!firebaseReady || !firebaseDb || !firebaseFns || !firebaseStorage) {
-        showToast('Error', 'Firebase no está configurado', 'error');
-        return;
-    }
-
-    try {
-        const refStorage = firebaseFns.ref(firebaseStorage, `skins/${uuid}.png`);
-        await firebaseFns.uploadBytes(refStorage, currentSkinFile);
-        const url = await firebaseFns.getDownloadURL(refStorage);
-
-        await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
-            skinUrl: url,
-            model: currentModel,
-            updated: Date.now()
-        });
-
-        skinViewer.loadSkin(url, { model: currentModel });
-        showToast('Azure', 'Skin guardada correctamente', 'success');
-    } catch (error) {
-        console.error('Error subiendo skin:', error);
-        showToast('Error', 'No se pudo guardar la skin', 'error');
-    }
-}
-
-// Check if user can upload skin
-function canUploadSkin(account) {
-    if (!account) return false;
-    if (account.type === "premium") return true;
-
-    // For offline, check Discord link
-    const discordLink = localStorage.getItem("discord_link");
-    return !!discordLink;
-}
-
-// Select model
-function selectModel(model) {
-    if (model === 'classic') {
-        setClassicModel();
-    } else if (model === 'slim') {
-        setSlimModel();
-    }
-}
-
-// Cape functions
-function manejarSubidaDeCape(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    currentCapeFile = file;
-    // Preview cape if needed
-}
-
-async function uploadCape(uuid) {
-    if (!currentCapeFile) return;
-    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage || !window.fbStorageRef || !window.fbUploadBytes || !window.fbGetDownloadURL) {
-        console.warn('Firebase no está disponible para subir la cape.');
-        return;
-    }
-
-    const storageReference = window.fbStorageRef(window.fbStorage, `capes/${uuid}.png`);
-    await window.fbUploadBytes(storageReference, currentCapeFile);
-    const url = await window.fbGetDownloadURL(storageReference);
-
-    await firebaseFns.set(firebaseFns.ref(firebaseDb, `users/${uuid}`), {
-        ...await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`)).then(s => s.val() || {}),
-        capeUrl: url,
-        updated: Date.now()
-    });
-
-    return url;
-}
-
-async function loadFirebaseCape(uuid) {
-    const snapshot = await firebaseFns.get(firebaseFns.ref(firebaseDb, `users/${uuid}`));
-    if (snapshot.exists()) {
-        const data = snapshot.val();
-        if (data.capeUrl) {
-            // Load cape into viewer or game
-            console.log('Cape loaded:', data.capeUrl);
-        }
     }
 }
 
@@ -429,53 +156,6 @@ const STANDARD_MINECRAFT_BLOCKS = [
     { name: 'Ladrillos', path: 'assets/blocks/bricks.png' },
     { name: 'Redstone', path: 'assets/blocks/redstone_block.png' }
 ];
-
-// === FIX DE CARGA DE SKIN Y VISOR 3D ===
-let globalSkinViewer = null;
-
-window.manejarSubidaDeSkin = manejarSubidaDeSkin;
-
-window.renderizarSkin3D = function(skinURL) {
-    const canvas = document.getElementById('skin-viewer-canvas');
-    if (!canvas) {
-        console.error("No se encontró el canvas 'skin-viewer-canvas'");
-        return;
-    }
-
-    try {
-        if (globalSkinViewer) {
-            globalSkinViewer.dispose();
-        }
-
-        const skinview3d = window.skinview3d;
-        if (!skinview3d) {
-            console.error('La librería skinview3d no se ha cargado desde el CDN.');
-            return;
-        }
-
-        const w = canvas.clientWidth || 300;
-        const h = canvas.clientHeight || 400;
-        canvas.width = w;
-        canvas.height = h;
-
-        globalSkinViewer = new skinview3d.SkinViewer({
-            canvas: canvas,
-            width: w,
-            height: h,
-            skin: skinURL
-        });
-        window.miVisor3D = globalSkinViewer;
-        skinViewer = globalSkinViewer;
-
-        globalSkinViewer.animation = new skinview3d.WalkingAnimation();
-        globalSkinViewer.animation.speed = 0.6;
-        globalSkinViewer.autoRotate = true;
-        globalSkinViewer.autoRotateSpeed = 0.5;
-
-    } catch (err) {
-        console.error('Error crítico en el render 3D:', err);
-    }
-};
 
 function saveVersionProfiles() {
     localStorage.setItem('azure_version_profiles', JSON.stringify(versionProfiles));
@@ -549,7 +229,51 @@ function migrateLegacyVersionList() {
     }
 }
 
+// --- LÓGICA DE NOTICIAS ---
+function listenToNews() {
+    if (!firebaseReady) return;
 
+    const newsRef = firebaseFns.ref(firebaseDb, 'launcher/news');
+    
+    // Escuchar cambios en tiempo real
+    firebaseFns.onValue(newsRef, (snapshot) => {
+        const newsContainer = document.getElementById('news-container'); // Asegúrate que este ID exista en tu HTML
+        if (!newsContainer) return;
+
+        newsContainer.innerHTML = ''; // Limpiar noticias viejas
+        const data = snapshot.val();
+
+        if (data) {
+            // Convertir objeto a array y ordenar por fecha (más reciente primero)
+            const newsList = Object.keys(data)
+            .map(key => data[key])
+            .sort((a, b) => new Date(b.fecha || b.date) - new Date(a.fecha || a.date));
+
+            newsList.forEach(item => {
+                const imageUrl = item.imagen || item.image || '';
+                const titleText = item.titulo || item.title || 'Sin título';
+                const descriptionText = item.descripcion || item.content || 'Sin descripción disponible.';
+                const dateText = item.fecha ? new Date(item.fecha).toLocaleDateString() : item.date ? new Date(item.date).toLocaleDateString() : '';
+
+                const newsCard = document.createElement('div');
+                newsCard.className = 'news-card';
+                newsCard.innerHTML = `
+                    <div class="news-card-header">
+                        <h3 class="news-title">${titleText}</h3>
+                        <span class="news-date">${dateText}</span>
+                    </div>
+                    ${imageUrl ? `<img src="${imageUrl}" alt="${titleText}" class="news-image">` : ''}
+                    <div class="news-content">
+                        <p class="news-text">${descriptionText}</p>
+                    </div>
+                `;
+                newsContainer.appendChild(newsCard);
+            });
+        } else {
+            newsContainer.innerHTML = '<p class="no-news">No hay novedades por ahora.</p>';
+        }
+    });
+}
 
 // Inicialización Segura
 const hasFirebaseConfig = FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.storageBucket && FIREBASE_CONFIG.projectId;
@@ -563,6 +287,8 @@ if (hasFirebaseConfig) {
         firebaseDb = getDatabase(app);
         firebaseFns = { ref: dbRef, set, onValue, remove, update, off, get };
         firebaseReady = true;
+
+        listenToNews();
 
         window.fbSet = set;
         window.fbRef = dbRef;
@@ -581,7 +307,7 @@ if (hasFirebaseConfig) {
         console.error('❌ Error cargando Firebase:', e);
     }
 } else {
-    console.warn('Firebase no está configurado. Activa FIREBASE_CONFIG para usar skins offline y Discord.');
+    console.warn('Firebase no está configurado. Activa FIREBASE_CONFIG para usar Discord y funcionalidades de sincronización.');
 }
 
 // Función para limpiar nombres (Firebase no acepta puntos o hashtags en las llaves)
@@ -632,12 +358,6 @@ let serverRefreshInterval = null;
 const COUNTRY_CACHE_KEY = 'azureCountryCache';
 let currentAccount = null;
 let activeSection = 'play';
-
-let skinLibrary = [];
-let currentSkinDataUrl = null;
-
-// Variable global para no crear el visor múltiples veces
-let miVisor3D = null;
 
 let privacyServerCache = [];
 let privacyHiddenServerIps = new Set(JSON.parse(localStorage.getItem('azureHiddenServers') || '[]'));
@@ -1123,537 +843,7 @@ async function setUserAvatar(name = 'Steve', preferredAvatar = '') {
         persistAvatar(safeName, avatarDataUrl);
         avatarElem.src = avatarDataUrl;
     } catch (error) {
-        console.warn(`No se pudo actualizar la skin de ${safeName}:`, error);
-    }
-}
-
-function actualizarVisualizacionSkin(nombre = 'Steve') {
-    const safeName = String(nombre || 'Steve').trim() || 'Steve';
-    const bodyImg = document.getElementById('skin-body-preview');
-    const nickLabel = document.getElementById('display-nick-skin');
-    const bodyImgSettings = document.getElementById('skin-body-preview-settings');
-    const nickLabelSettings = document.getElementById('display-nick-skin-settings');
-
-    if (nickLabel) {
-        nickLabel.innerText = safeName;
-    }
-    if (nickLabelSettings) {
-        nickLabelSettings.innerText = safeName;
-    }
-
-    const updateBodyImage = (imgElem) => {
-        if (!imgElem) return;
-
-        const cachedAvatar = getCachedAvatar(safeName);
-        if (cachedAvatar && cachedAvatar.startsWith('data:image')) {
-            currentSkinDataUrl = cachedAvatar;
-            imgElem.src = cachedAvatar;
-            return;
-        }
-
-        const safeEncodedName = encodeURIComponent(safeName);
-        const bodyUrl = `https://minotar.net/armor/body/${safeEncodedName}/150.png`;
-        const fallbackBody = 'https://minotar.net/armor/body/Steve/150.png';
-
-        if (!currentSkinDataUrl) {
-            currentSkinDataUrl = `https://minotar.net/skin/${safeEncodedName}.png`;
-        }
-
-        imgElem.onerror = () => {
-            imgElem.onerror = null;
-            imgElem.src = fallbackBody;
-        };
-        imgElem.src = bodyUrl;
-    };
-
-    updateBodyImage(bodyImg);
-    updateBodyImage(bodyImgSettings);
-    renderSkinLibrary();
-}
-
-function getSkinLibraryKey(userIdentifier) {
-    const safeIdentifier = String(userIdentifier || 'invitado').trim().toLowerCase();
-    return `skins_library_${safeIdentifier}`;
-}
-
-function getSkinStorageUserKey(account) {
-    const key = String(account?.uuid || account?.name || 'invitado').trim().toLowerCase();
-    return key.replace(/[^a-z0-9_-]/gi, '_');
-}
-
-function dataURLToBlob(dataUrl) {
-    const parts = dataUrl.split(',');
-    const header = parts[0];
-    const raw = atob(parts[1]);
-    const mimeMatch = header.match(/data:([^;]+);/i);
-    const mime = mimeMatch ? mimeMatch[1] : 'image/png';
-    const array = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) {
-        array[i] = raw.charCodeAt(i);
-    }
-    return new Blob([array], { type: mime });
-}
-
-function renderSkinLibrary() {
-    const library = document.getElementById('skin-library-list');
-    if (!library) return;
-
-    library.innerHTML = skinLibrary.map((item, index) => `
-        <div class="skin-card" onclick="selectLibrarySkin(${index})">
-            <img src="${item.dataUrl}" alt="Skin ${item.name}" class="skin-card-img">
-            <div class="skin-card-info">
-                <span class="skin-name">${item.name || 'Skin'}</span>
-                <span class="skin-model">${item.model || 'Modelo'}</span>
-            </div>
-        </div>
-    `).join('');
-}
-
-function saveSkinToLibrary(skinData, model = 'classic', name = '', userIdentifier = '') {
-    const currentUser = String(userIdentifier || localStorage.getItem('last_username') || 'invitado').trim() || 'invitado';
-    const storageKey = getSkinLibraryKey(currentUser);
-    const skinName = String(name || currentUser || 'Skin').trim() || 'Skin';
-
-    let existingLibrary = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    existingLibrary.unshift({
-        id: Date.now(),
-        name: skinName,
-        model,
-        dataUrl: skinData
-    });
-    existingLibrary = existingLibrary.slice(0, 12);
-
-    localStorage.setItem(storageKey, JSON.stringify(existingLibrary));
-    skinLibrary = existingLibrary;
-    renderSkinLibrary();
-    console.log(`Skin guardada para el usuario: ${currentUser}`);
-}
-
-async function saveSkinMetadataToFirebase(account, skinDataUrl, skinName, model) {
-    if (!firebaseReady || !firebaseDb || !firebaseFns || !window.fbStorage || !window.fbStorageRef || !window.fbUploadBytes || !window.fbGetDownloadURL) {
-        return null;
-    }
-
-    try {
-        const userKey = getSkinStorageUserKey(account);
-        const blob = dataURLToBlob(skinDataUrl);
-        const fileName = `skins/${userKey}/${Date.now()}_${clean(String(skinName || account?.name || 'skin'))}.png`;
-        const storageReference = window.fbStorageRef(window.fbStorage, fileName);
-
-        await window.fbUploadBytes(storageReference, blob, { contentType: blob.type });
-        const downloadUrl = await window.fbGetDownloadURL(storageReference);
-
-        const skinRecord = {
-            id: Date.now(),
-            name: skinName || `Skin ${new Date().toLocaleString()}`,
-            model: model || 'classic',
-            url: downloadUrl,
-            updatedAt: Date.now()
-        };
-
-        await firebaseFns.set(firebaseFns.dbRef(firebaseDb, `skins/${userKey}/${skinRecord.id}`), skinRecord);
-        await firebaseFns.update(firebaseFns.dbRef(firebaseDb, `usuarios/${userKey}`), {
-            activeSkinUrl: downloadUrl,
-            activeSkinName: skinRecord.name,
-            activeSkinModel: skinRecord.model,
-            skinLastSynced: Date.now()
-        });
-
-        return downloadUrl;
-    } catch (error) {
-        console.warn('No se pudo subir la skin a Firebase:', error);
-        return null;
-    }
-}
-
-async function loadRemoteSkinLibrary(account) {
-    if (!account || !firebaseReady || !firebaseDb || !firebaseFns) return;
-
-    try {
-        const userKey = getSkinStorageUserKey(account);
-        const snapshot = await firebaseFns.get(firebaseFns.dbRef(firebaseDb, `skins/${userKey}`));
-        if (!snapshot.exists()) return;
-
-        const remoteSkins = Object.values(snapshot.val() || {}).map((item) => ({
-            id: item.id || Date.now(),
-            name: item.name || 'Skin remota',
-            model: item.model || 'classic',
-            dataUrl: item.url || ''
-        })).filter((item) => item.dataUrl);
-
-        if (remoteSkins.length === 0) return;
-
-        const storageKey = getSkinLibraryKey(account.name);
-        const existingLibrary = JSON.parse(localStorage.getItem(storageKey) || '[]');
-        const merged = [...remoteSkins, ...existingLibrary]
-            .reduce((acc, item) => {
-                if (!acc.some((saved) => saved.dataUrl === item.dataUrl)) {
-                    acc.push(item);
-                }
-                return acc;
-            }, [])
-            .slice(0, 12);
-
-        localStorage.setItem(storageKey, JSON.stringify(merged));
-        skinLibrary = merged;
-        renderSkinLibrary();
-    } catch (error) {
-        console.warn('Error cargando skins desde Firebase:', error);
-    }
-}
-
-function initSkinViewer() {
-    if (miVisor3D) return; // ya inicializado
-
-    if (!window.skinview3d) {
-        console.log('skinview3d no cargado aún, esperando...');
-        setTimeout(initSkinViewer, 500);
-        return;
-    }
-
-    const initialUsername = currentAccount?.name || 'Steve';
-    const cachedAvatar = getCachedAvatar(initialUsername);
-    const initialSkin = cachedAvatar || `https://minotar.net/skin/${encodeURIComponent(initialUsername)}.png`;
-
-    currentSkinDataUrl = initialSkin;
-
-    // Inicializar el visor 3D
-    renderizarSkin3D(initialSkin);
-
-    // Lógica de botones
-    const btnBrowse = document.getElementById('btn-browse');
-    const fileInput = document.getElementById('file-input');
-    const statusContainer = document.getElementById('step-4-container');
-    const statusText = document.getElementById('status-text');
-
-    if (btnBrowse && fileInput) {
-        btnBrowse.addEventListener('click', () => fileInput.click());
-
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            statusContainer.style.opacity = "1";
-            statusText.textContent = "Cargando: " + file.name;
-
-            const reader = new FileReader();
-
-            reader.onprogress = (progressEvent) => {
-                if (progressEvent.lengthComputable) {
-                    const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-                    statusText.textContent = `Cargando ${file.name}... ${percent}%`;
-                }
-            };
-
-            reader.onloadstart = () => {
-                statusText.textContent = `Empezando carga de ${file.name}...`;
-            };
-
-            reader.onload = (event) => {
-                console.log('Skin cargada:', event.target.result.substring(0, 50) + '...');
-                statusText.textContent = `Procesando skin...`;
-                const dataUrl = event.target.result;
-                currentSkinDataUrl = dataUrl;
-                renderizarSkin3D(dataUrl);
-                console.log('Skin cargada en visor 3D');
-                setUserAvatar(currentAccount?.name || 'Steve', dataUrl);
-                actualizarVisualizacionSkin(currentAccount?.name || 'Steve');
-                localStorage.setItem('last_skin_url', dataUrl);
-
-                statusText.textContent = `¡Skin cargada! Toca APLICAR para guardar.`;
-                statusContainer.style.opacity = "1";
-            };
-
-            reader.onerror = () => {
-                statusText.textContent = `Error cargando archivo ${file.name}. Intenta de nuevo.`;
-                console.error('Error en FileReader');
-            };
-
-            reader.onloadend = () => {
-                if (!reader.error) {
-                    statusText.textContent = `Listo: ${file.name} cargada al visor.`;
-                }
-            };
-
-            reader.readAsDataURL(file);
-        });
-
-    }
-
-    // Cambiar Modelos
-    const mClassic = document.getElementById('m-classic');
-    const mSlim = document.getElementById('m-slim');
-
-    if (mClassic) {
-        mClassic.addEventListener('click', function() {
-            this.classList.add('active');
-            mSlim.classList.remove('active');
-            miVisor3D.playerObject.skin.model = "classic";
-        });
-    }
-
-    if (mSlim) {
-        mSlim.addEventListener('click', function() {
-            this.classList.add('active');
-            mClassic.classList.remove('active');
-            miVisor3D.playerObject.skin.model = "slim";
-        });
-    }
-
-    // Reiniciar cámara
-    const btnReset = document.getElementById('btn-reset-skin');
-    if (btnReset) {
-        btnReset.addEventListener('click', () => {
-            miVisor3D.autoRotate = !miVisor3D.autoRotate;
-        });
-    }
-
-    // Guardar como skin activa en cuenta
-    const btnSave = document.getElementById('btn-save-skin');
-    if (btnSave) {
-        btnSave.addEventListener('click', () => {
-            aplicarSkinEnCuenta();
-        });
-    }
-}
-
-// 1. FUNCIÓN PARA EL MODELO 3D (Cuadro Verde)
-window.renderizarSkin3D = function(skinURL) {
-    const canvas = document.getElementById('skin-viewer-canvas'); // Asegúrate que este ID esté en tu HTML
-    if (!canvas) {
-        console.error("No se encontró el canvas para la skin");
-        return;
-    }
-
-    // Si ya existe un visor, lo limpiamos para no poner lenta la PC
-    if (window.miVisor3D) {
-        try {
-            window.miVisor3D.dispose();
-        } catch (e) {
-            console.warn('No se pudo disposear miVisor3D:', e);
-        }
-    }
-
-    // Ajustar tamaño al contenedor (para evitar el canvas invisible)
-    const w = Math.max(280, canvas.clientWidth || 280);
-    const h = Math.max(400, canvas.clientHeight || 400);
-    canvas.width = w;
-    canvas.height = h;
-
-    // Creamos el modelo 3D
-    window.miVisor3D = new skinview3d.SkinViewer({
-        canvas: canvas,
-        width: w,
-        height: h,
-        skin: skinURL
-    });
-
-    // Animación de caminata
-    window.miVisor3D.animation = new skinview3d.WalkingAnimation();
-    window.miVisor3D.animation.speed = 0.6;
-
-    // Control de rotación con el mouse
-    if (window.miVisor3D.controls) {
-        window.miVisor3D.controls.enableRotate = true;
-        window.miVisor3D.controls.enableZoom = false;
-    }
-};
-
-function selectLibrarySkin(index) {
-    const selected = skinLibrary[index];
-    if (!selected || !selected.dataUrl) return;
-
-    currentSkinDataUrl = selected.dataUrl;
-    setUserAvatar(currentAccount?.name || 'Steve', selected.dataUrl);
-    actualizarVisualizacionSkin(currentAccount?.name || 'Steve');
-    if (miVisor3D) {
-        miVisor3D.loadSkin(selected.dataUrl);
-    }
-    showToast('Skin cargada desde la librería.');
-}
-
-
-function restablecerSkinPredeterminada() {
-    if (!currentAccount) {
-        showToast('Selecciona primero una cuenta.');
-        return;
-    }
-    const safeName = String(currentAccount.name || 'Steve').trim().toLowerCase();
-    localStorage.removeItem(`azureAvatarCache:${safeName}`);
-    setUserAvatar('Steve');
-    actualizarVisualizacionSkin('Steve');
-    currentSkinDataUrl = null;
-    if (miVisor3D) {
-        miVisor3D.loadSkin('https://minotar.net/skin/Steve.png');
-    }
-    showToast('Skin restablecida a la predeterminada.');
-}
-
-function openSkinFileDialog() {
-    if (!currentAccount) {
-        showToast('Selecciona o crea una cuenta antes de subir una skin.');
-        showScreen('screen-account-selector');
-        return;
-    }
-
-    initSkinViewer();
-    const fileInput = document.getElementById('file-input');
-    if (!fileInput) {
-        showToast('No se encontró el elemento de selección de archivo.');
-        return;
-    }
-    fileInput.click();
-}
-
-function setClassicModel() {
-    document.getElementById('m-classic')?.classList.add('active');
-    document.getElementById('m-slim')?.classList.remove('active');
-    if (miVisor3D) {
-        miVisor3D.playerObject.skin.model = 'classic';
-    }
-}
-
-function setSlimModel() {
-    document.getElementById('m-slim')?.classList.add('active');
-    document.getElementById('m-classic')?.classList.remove('active');
-    if (miVisor3D) {
-        miVisor3D.playerObject.skin.model = 'slim';
-    }
-}
-
-function resetSkinView() {
-    skinViewer.controls.reset();
-}
-
-function applySkin() {
-    if (!currentAccount) {
-        showToast('Debes iniciar sesión primero.');
-        return;
-    }
-    aplicarSkinEnCuenta();
-}
-
-function aplicarSkinEnCuenta() {
-    if (!currentAccount) {
-        showToast('Selecciona primero una cuenta.');
-        return;
-    }
-    if (!currentSkinDataUrl) {
-        showToast('No hay skin cargada. Sube una skin desde "Seleccionar Skin" o elige de la librería.');
-        return;
-    }
-
-    const skinName = document.getElementById('skin-name')?.value.trim() || `Skin de ${currentAccount.name}`;
-    const skinModel = currentModel;
-
-    persistAvatar(currentAccount.name, currentSkinDataUrl);
-    setUserAvatar(currentAccount.name, currentSkinDataUrl);
-    actualizarVisualizacionSkin(currentAccount.name);
-    localStorage.setItem('last_skin_url', currentSkinDataUrl);
-    if (skinViewer) {
-        skinViewer.loadSkin(currentSkinDataUrl);
-    }
-
-    const statusText = document.getElementById('status-text');
-    if (statusText) {
-        statusText.textContent = '¡Skin guardada en tu cuenta!';
-    }
-
-    saveSkinToLibrary(currentSkinDataUrl, skinModel, skinName, currentAccount.name);
-
-    if (currentAccount.type === 'offline' && currentSkinFile) {
-        saveOfflineSkin(currentAccount.uuid || currentAccount.name, currentSkinFile)
-            .then(() => {
-                showToast('Skin subida a Firebase y guardada localmente.');
-            })
-            .catch((err) => {
-                console.error('Error uploading a Firebase:', err);
-                showToast('Skin guardada localmente. Error al subir a Firebase.');
-            });
-    } else {
-        showToast('Skin aplicada y guardada en tu cuenta.');
-    }
-}
-
-function aplicarCapeEnCuenta() {
-    if (!currentAccount) {
-        showToast('Selecciona primero una cuenta.');
-        return;
-    }
-    if (!currentCapeFile) {
-        showToast('No hay cape cargada. Sube una cape desde "Seleccionar Cape".');
-        return;
-    }
-
-    // Upload to Firebase
-    uploadCape(currentAccount.uuid || currentAccount.name)
-        .then((url) => {
-            showToast('Cape subida a Firebase y aplicada.');
-        })
-        .catch((err) => {
-            console.error('Error uploading cape to Firebase:', err);
-            showToast('Error al subir cape a Firebase.');
-        });
-}
-
-window.manejarSubidaDeSkin = function(event) {
-    const archivo = event.target.files?.[0];
-    if (!archivo) return;
-
-    currentSkinFile = archivo;
-
-    const lector = new FileReader();
-    lector.onload = (e) => {
-        const urlImagen = e.target.result;
-
-        console.log('Skin cargada localmente, renderizando 3D...');
-        if (typeof window.renderizarSkin3D === 'function') {
-            window.renderizarSkin3D(urlImagen);
-        }
-
-        window.skinTemporalParaAplicar = urlImagen;
-        currentSkinDataUrl = urlImagen;
-
-        const statusText = document.getElementById('status-text');
-        if (statusText) {
-            statusText.textContent = 'Skin cargada localmente. Presiona APLICAR para guardar.';
-        }
-    };
-
-    lector.readAsDataURL(archivo);
-};
-
-async function exportarSkinUsuario() {
-    const name = currentAccount?.name || 'Steve';
-    const skinUrl = `https://minotar.net/skin/${encodeURIComponent(name)}.png`;
-
-    try {
-        showToast(`Preparando skin de ${name}...`);
-
-        const response = await fetch(skinUrl);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        const blob = await response.blob();
-        const reader = new FileReader();
-
-        reader.onloadend = async () => {
-            const base64data = reader.result;
-            const success = await ipc.invoke('export-skin', {
-                imageData: base64data,
-                username: name
-            });
-
-            if (success) {
-                showToast('¡Skin guardada en tu PC con éxito!');
-            } else {
-                showToast('Exportación cancelada.');
-            }
-        };
-
-        reader.readAsDataURL(blob);
-    } catch (error) {
-        console.error('Error al exportar skin:', error);
-        showToast('Error al obtener la skin del servidor.');
+        console.warn(`No se pudo actualizar el avatar de ${safeName}:`, error);
     }
 }
 
@@ -1751,7 +941,7 @@ const translations = {
         versionsEmpty: 'No hay versiones. Haz clic en "+" para agregar.',
         selectedVersion: 'VERSIÓN SELECCIONADA:',
         playNow: '¡JUGAR AHORA!',
-        playTab: 'Skin',
+        playTab: 'Novedades',
         screenshotsTab: 'Capturas',
         serversTab: 'Servidores',
         friendsTab: 'Amigos',
@@ -1834,7 +1024,7 @@ const translations = {
         versionsEmpty: 'There are no versions yet. Click "+" to add one.',
         selectedVersion: 'SELECTED VERSION:',
         playNow: 'PLAY NOW!',
-        playTab: 'Play',
+        playTab: 'News',
         screenshotsTab: 'Screenshots',
         serversTab: 'Servers',
         friendsTab: 'Friends',
@@ -1916,7 +1106,7 @@ const translations = {
         versionsEmpty: 'Ainda não há versões. Clique em "+" para adicionar.',
         selectedVersion: 'VERSÃO SELECIONADA:',
         playNow: 'JOGAR AGORA!',
-        playTab: 'Jogar',
+        playTab: 'Notícias',
         screenshotsTab: 'Capturas',
         serversTab: 'Servidores',
         friendsTab: 'Amigos',
@@ -1998,7 +1188,7 @@ const translations = {
         versionsEmpty: 'Aucune version. Cliquez sur "+" pour en ajouter une.',
         selectedVersion: 'VERSION SÉLECTIONNÉE :',
         playNow: 'JOUER MAINTENANT !',
-        playTab: 'Jouer',
+        playTab: 'Actualités',
         screenshotsTab: 'Captures',
         serversTab: 'Serveurs',
         friendsTab: 'Amis',
@@ -2381,20 +1571,6 @@ function selectAccount(acc, options = {}) {
     }
 
     setUserAvatar(storedAccount.name, storedAccount.avatar);
-    actualizarVisualizacionSkin(storedAccount.name);
-    loadSkinForAccount(storedAccount);
-    if (miVisor3D) {
-        const avatar = getCachedAvatar(storedAccount.name);
-        if (avatar) miVisor3D.loadSkin(avatar);
-    }
-    // Cargar librería de skins del usuario
-    skinLibrary = JSON.parse(localStorage.getItem(getSkinLibraryKey(storedAccount.name)) || '[]');
-    renderSkinLibrary();
-    if (firebaseReady) {
-        loadRemoteSkinLibrary(storedAccount).catch((error) => {
-            console.warn('No se pudo cargar la librería remota de skins:', error);
-        });
-    }
     updateWelcomeMessage(storedAccount.name);
 
     const offlineNameInput = document.getElementById('offline-name');
@@ -3636,7 +2812,7 @@ function loginWithAccount(username) {
 
     selectAccount(account, { closeModal: false, updateList: true });
     showScreen('screen-dashboard');
-    showSection('servers');
+    showSection('section-novedades');
 }
 
 function toggleFavoriteLogin(username, event) {
@@ -3674,62 +2850,46 @@ function changeTab(id) {
     console.log(`changeTab: ${id}`);
 }
 
-function showSection(section, element) {
-    activeSection = section;
-    document.querySelectorAll('.nav-item, .tab-btn').forEach(btn => btn.classList.remove('active'));
+function showSection(sectionId) {
+    // 1. Ocultar TODAS las secciones primero (esto evita que se superpongan)
+    document.querySelectorAll('.content-section').forEach(section => {
+        section.classList.remove('active');
+        section.style.display = 'none'; // Forzamos ocultarlo por si acaso
+    });
 
-    const targetButton = element || Array.from(document.querySelectorAll('.section-tabs .tab-btn'))
-        .find((btn) => btn.getAttribute('onclick')?.includes(`'${section}'`));
-    if (targetButton) targetButton.classList.add('active');
+    // 2. Mostrar SOLO la sección que queremos
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) {
+        targetSection.classList.add('active');
+        targetSection.style.display = 'flex'; // o 'block'
+    }
 
-    const playInfo = document.getElementById('play-info');
-    const skinPanel = document.getElementById('skin-panel');
-    const settingsPanel = document.getElementById('settings-panel');
-    const ssGrid = document.getElementById('ss-grid');
-    const serverList = document.getElementById('server-list');
-    const friendsPanel = document.getElementById('friends-panel');
-    const screenshotModal = document.getElementById('screenshot-modal');
+    // 3. Opcional: Actualizar el botón activo en el menú lateral
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.querySelector(`[onclick="showSection('${sectionId}')"]`);
+    if (activeBtn) activeBtn.classList.add('active');
 
-    if (section !== 'servers') {
+    // Detener refresh de servidores si no estamos en esa sección
+    if (sectionId !== 'section-servers') {
         stopServerRefresh();
     }
 
-    if (playInfo) playInfo.classList.add('hidden');
-    if (skinPanel) skinPanel.classList.add('hidden');
-    if (settingsPanel) settingsPanel.style.display = 'none';
-    if (serverList) {
-        serverList.style.display = 'none';
-        if (section !== 'servers') serverList.innerHTML = '';    }
-    if (friendsPanel) friendsPanel.style.display = 'none';
-    if (ssGrid) {
-        ssGrid.style.display = 'none';
-        if (section !== 'screenshots') ssGrid.innerHTML = '';    }
-
-    if (section === 'play') {
-        if (screenshotModal) screenshotModal.classList.add('hidden');
-        if (playInfo) {
-            playInfo.classList.add('hidden');
-        }
-        if (skinPanel) {
-            skinPanel.classList.remove('hidden');
-            skinPanel.style.display = 'flex';
-        }
-        if (typeof initSkinViewer === 'function') initSkinViewer();
-    } else if (section === 'screenshots') {
+    // Cargar contenido específico de cada sección
+    if (sectionId === 'section-screenshots') {
+        const screenshotModal = document.getElementById('screenshot-modal');
         if (screenshotModal) screenshotModal.classList.remove('hidden');
-        if (ssGrid) ssGrid.style.display = 'grid';
         if (typeof loadScreenshots === 'function') loadScreenshots();
-    } else if (section === 'servers') {
+    } else {
+        const screenshotModal = document.getElementById('screenshot-modal');
         if (screenshotModal) screenshotModal.classList.add('hidden');
-        if (serverList) serverList.style.display = 'grid';
+    }
+
+    if (sectionId === 'section-servers') {
         if (typeof openServers === 'function') openServers();
-    } else if (section === 'friends') {
-        if (screenshotModal) screenshotModal.classList.add('hidden');
-        if (friendsPanel) friendsPanel.style.display = 'block';
+    }
+
+    if (sectionId === 'section-friends') {
         if (typeof renderFriendsPanel === 'function') renderFriendsPanel();
-    } else if (section === 'settings') {
-        if (screenshotModal) screenshotModal.classList.add('hidden');
-        if (settingsPanel) settingsPanel.style.display = 'block';
     }
 }
 
@@ -3808,7 +2968,7 @@ function loginOffline() {
     selectAccount(account, { closeModal: false, updateList: true });
     ipc.send('update-discord', { username: name, status: 'En el menú', version: 'Menú Principal' });
     showScreen('screen-dashboard');
-    showSection('play');
+    showSection('section-novedades');
 }
 
 async function openMicrosoftLogin() {
@@ -3845,7 +3005,7 @@ async function openMicrosoftLogin() {
         autoLinkDiscord(account);
 
         showScreen('screen-dashboard');
-        showSection('play');
+        showSection('section-novedades');
     } catch (error) {
         console.error('[Microsoft Login]', error);
         showToast(`Error login Microsoft: ${error.message || error}`, 'error');
@@ -3987,7 +3147,7 @@ let currentSSPath = '';
 
 // para el menú de capturas y servidores
 function openScreenshots() {
-    showSection('screenshots');
+    showSection('section-screenshots');
 }
 
 function openScreenshot(path) {
@@ -4338,7 +3498,7 @@ function loadStatusBar() {
 // loadStatusBar() is called in DOMContentLoaded to ensure DOM elements exist
 
 function openSettings() {
-    showSection('settings');
+    showSection('section-settings');
 }
 
 function applyColor() {
@@ -4834,7 +3994,7 @@ async function uploadCustomProfileIcon(profileId) {
     if (!profileId) return;
     closeIconSelectorModal();
 
-    const imageDataUrl = await ipc.invoke('upload-custom-skin', profileId);
+    const imageDataUrl = await ipc.invoke('upload-custom-image', profileId);
     if (!imageDataUrl) return;
 
     const image = new Image();
@@ -5312,19 +4472,8 @@ async function registrarEntradaServidor(serverIp) {
 window.controlWindow = controlWindow;
 window.showScreen = showScreen;
 window.showSection = showSection;
-// window.manejarSubidaDeSkin = manejarSubidaDeSkin; // ya está definida como window.manejarSubidaDeSkin en el bloque inicial
-window.exportarSkinUsuario = exportarSkinUsuario;
-window.restablecerSkinPredeterminada = restablecerSkinPredeterminada;
-window.aplicarSkinEnCuenta = aplicarSkinEnCuenta;
-window.openSkinFileDialog = openSkinFileDialog;
-window.setClassicModel = setClassicModel;
-window.setSlimModel = setSlimModel;
-window.resetSkinView = resetSkinView;
-window.applySkin = applySkin;
 window.showConfirmModal = showConfirmModal;
 window.openSettings = openSettings;
-window.renderizarSkin3D = renderizarSkin3D;
-window.saveSkinToLibrary = saveSkinToLibrary;
 
 // 3. LOGICA AL INICIAR (Para que salgan las versiones primero)
 document.addEventListener('DOMContentLoaded', async () => {
@@ -5361,20 +4510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         startFriendsRealtimeSync();
         actualizarTopUI();
         escucharTransferencias();
-        initSkinViewer();
         updateDiscordStatus('En el menú');
-
-        // File input for skin upload
-        const fileInput = document.getElementById('file-input');
-        if (fileInput) {
-            fileInput.addEventListener('change', e => {
-                currentSkinFile = e.target.files[0];
-                if (currentSkinFile) {
-                    const url = URL.createObjectURL(currentSkinFile);
-                    skinViewer.loadSkin(url, { model: currentModel });
-                }
-            });
-        }
 
         // Decisión de pantalla inicial
         const accounts = getStoredAccounts();
@@ -5417,7 +4553,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             loadAccounts();
             showScreen('screen-dashboard');
-            showSection('play');
+            showSection('section-novedades');
         } else if (accounts.length > 0) {
             console.log('Mostrando selector de cuentas');
             showScreen('screen-account-selector');
