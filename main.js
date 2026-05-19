@@ -9,10 +9,33 @@ const os = require('os');
 const fs = require('fs');
 const https = require('https');
 const http = require('http');
+const url = require('url');
 const { exec } = require('child_process');
 const nbt = require('prismarine-nbt');
 const RPC = require('discord-rpc');
 const { getStatus } = require('mc-server-status');
+
+let authServer = null;
+
+function startMicrosoftAuthServer() {
+    if (authServer) return;
+
+    authServer = http.createServer((req, res) => {
+        const query = url.parse(req.url, true).query;
+
+        if (query.code) {
+            mainWindow.webContents.send('ms-code', query.code);
+            res.end('Login completado. Puedes cerrar esta ventana.');
+            
+            authServer.close();
+            authServer = null;
+        }
+    });
+
+    authServer.listen(54124, () => {
+        console.log('Auth server iniciado en 54124');
+    });
+}
 
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
@@ -1279,6 +1302,10 @@ app.on('window-all-closed', () => {
 });
 
 // --- FUNCIONES DE ARCHIVOS ---
+
+ipcMain.handle('start-ms-auth', () => {
+    startMicrosoftAuthServer();
+});
 
 // 1. Obtener Capturas de Pantalla (del launcher o de la instalación clásica)
 ipcMain.handle('get-screenshots', () => {

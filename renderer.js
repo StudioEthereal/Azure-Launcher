@@ -2972,44 +2972,145 @@ function loginOffline() {
 }
 
 async function openMicrosoftLogin() {
+    await ipc.invoke('start-ms-auth');
+
+    const clientId = 'b33853a1-42af-4de7-8dad-59bd131ac570';
+    const redirectUri = 'http://localhost:54124';
+
+    const scope = [
+        'XboxLive.signin',
+        'offline_access'
+    ].join(' ');
+
+    const url = `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize` +
+        `?client_id=${clientId}` +
+        `&response_type=code` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_mode=query` +
+        `&scope=${encodeURIComponent(scope)}`;
+
+    require('electron').shell.openExternal(url);
+}
+
+ipcRenderer.on('ms-code', async (_, code) => {
     try {
-        showToast('Abriendo login Microsoft...', 'info');
-        const result = await ipc.invoke('login-microsoft');
+        showToast('Iniciando sesión con Microsoft...');
 
-        if (!result || result.success !== true || !result.account) {
-            throw new Error(result?.error || 'No se recibió un perfil válido de Microsoft.');
-        }
+        const ms = await getMicrosoftToken(code);
+        const xbox = await getXboxToken(ms.access_token);
+        const xsts = await getXSTSToken(xbox.Token);
 
-        const resolvedName = result.account.username || result.account.name || result.account.profile?.name || 'Jugador';
-        const account = addAccountToStorage({
-            name: resolvedName,
-            username: resolvedName,
-            id: result.account.uuid || result.account.id || null,
-            uuid: result.account.uuid || result.account.id || null,
+        const uhs = xbox.DisplayClaims.xui[0].uhs;
+
+        const mc = await loginMinecraft(xsts.Token, uhs);
+        const profile = await getMinecraftProfile(mc.access_token);
+
+        const newAccount = {
             type: 'premium',
-            accessToken: result.account.accessToken || result.account.mcToken || null,
-            refreshToken: result.account.refreshToken || null,
-            profile: result.account.profile || null,
-            avatar: `https://minotar.net/helm/${encodeURIComponent(resolvedName)}/64`
-        });
+            username: profile.name,
+            name: profile.name,
+            uuid: profile.id,
+            accessToken: mc.access_token,
+            isFavorite: true
+        };
 
-        if (!account) {
-            throw new Error('No se pudo guardar la cuenta Microsoft.');
+        // Guardar en tu sistema actual
+        const accounts = getStoredAccounts();
+        accounts.forEach(acc => acc.isFavorite = false);
+        accounts.push(newAccount);
+        saveStoredAccounts(accounts);
+
+        // Auto Discord link (YA LO TIENES)
+        await autoLinkDiscord(newAccount);
+
+        showToast(`Bienvenido ${profile.name}`, 'success');
+
+        loadAccounts();
+        setUserAvatar(profile.name);
+
+    } catch (e) {
+        console.error(e);
+
+        if (String(e).includes('404')) {
+            showToast('Esta cuenta no tiene Minecraft Premium');
+        } else {
+            showToast('Error en login Microsoft');
         }
-
-        selectAccount(account, { closeModal: false, updateList: true });
-        ipc.send('update-discord', { username: account.name, status: 'En el menú', version: 'Menú Principal' });
-        showToast(`¡Bienvenido ${account.name}! Cuenta Microsoft activada.`, 'success');
-
-        // Vinculación automática de Discord
-        autoLinkDiscord(account);
-
-        showScreen('screen-dashboard');
-        showSection('section-novedades');
-    } catch (error) {
-        console.error('[Microsoft Login]', error);
-        showToast(`Error login Microsoft: ${error.message || error}`, 'error');
     }
+});
+
+async function getMicrosoftToken(code) {
+    const params = new URLSearchParams({
+        client_id: 'b33853a1-42af-4de7-8dad-59bd131ac570',
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: 'http://localhost:54124'
+    });
+
+    const res = await fetch('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+    });
+
+    return res.json();
+}
+
+async function getXboxToken(msAccessToken) {
+    const res = await fetch('https://user.auth.xboxlive.com/user/authenticate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            Properties: {
+                AuthMethod: 'RPS',
+                SiteName: 'user.auth.xboxlive.com',
+                RpsTicket: `d=${msAccessToken}`
+            },
+            RelyingParty: 'http://auth.xboxlive.com',
+            TokenType: 'JWT'
+        })
+    });
+
+    return res.json();
+}
+
+async function getXSTSToken(xboxToken) {
+    const res = await fetch('https://xsts.auth.xboxlive.com/xsts/authorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            Properties: {
+                SandboxId: 'RETAIL',
+                UserTokens: [xboxToken]
+            },
+            RelyingParty: 'rp://api.minecraftservices.com/',
+            TokenType: 'JWT'
+        })
+    });
+
+    return res.json();
+}
+
+async function loginMinecraft(xstsToken, uhs) {
+    const res = await fetch('https://api.minecraftservices.com/authentication/login_with_xbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            identityToken: `XBL3.0 x=${uhs};${xstsToken}`
+        })
+    });
+
+    return res.json();
+}
+
+async function getMinecraftProfile(mcToken) {
+    const res = await fetch('https://api.minecraftservices.com/minecraft/profile', {
+        headers: {
+            'Authorization': `Bearer ${mcToken}`
+        }
+    });
+
+    return res.json();
 }
 
 // LOGIN
