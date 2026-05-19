@@ -1,6 +1,6 @@
 {
   "name": "azure-launcher",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Azure Luncher",
   "main": "main.js",
   "scripts": {
@@ -67,6 +67,12 @@
       ],
       "icon": "Azure-Launcher.ico",
       "artifactName": "AzureLauncher-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game"
     },
     "nsis": {
       "oneClick": false,

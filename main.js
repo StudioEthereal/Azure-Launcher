@@ -52,8 +52,17 @@ app.on('second-instance', () => {
 
 // Configuración
 const configPath = path.join(__dirname, 'config.json');
+// Obtener ruta por defecto de Minecraft según plataforma
+const getDefaultMinecraftPath = () => {
+    if (process.platform === 'win32') {
+        return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), '.minecraft');
+    } else {
+        return path.join(os.homedir(), '.minecraft');
+    }
+};
+
 let config = {
-    minecraftPath: path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), '.minecraft'),
+    minecraftPath: getDefaultMinecraftPath(),
     javaPath: '',
     disableGPU: true
 };
@@ -1965,13 +1974,17 @@ ipcMain.on('window-control', (e, action) => {
     }
 });
 
-// Listener para abrir el explorador de archivos y buscar javaw.exe
+// Listener para abrir el explorador de archivos y buscar el ejecutable de Java (multiplataforma)
 ipcMain.handle('select-java', async () => {
+    const isWin = process.platform === 'win32';
+
     const { canceled, filePaths } = await dialog.showOpenDialog({
-        title: 'Selecciona el ejecutable de Java (javaw.exe)',
+        title: isWin ? 'Selecciona el ejecutable de Java (javaw.exe)' : 'Selecciona el ejecutable de Java (java)',
         properties: ['openFile'],
-        filters: [
+        filters: isWin ? [
             { name: 'Ejecutables de Java', extensions: ['exe'] }
+        ] : [
+            { name: 'Todos los archivos', extensions: ['*'] }
         ]
     });
 
