@@ -1,0 +1,27 @@
+name: Compilar Launcher para Linux
+on: [push]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Compilar para Linux
+        run: npm run dist:linux
+
+      - name: Guardar Instalador de Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: Azure-Launcher-Linux
+          path: dist/*.AppImage
