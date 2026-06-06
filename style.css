@@ -108,6 +108,34 @@
     border: 1px solid rgba(var(--accent-rgb), 0.22);
 }
 
+.version-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.version-alias {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #f8fbff;
+}
+
+.version-real {
+    font-size: 0.82rem;
+    color: #c1cbd4;
+}
+
+.version-old {
+    color: var(--danger) !important;
+}
+
+.version-warning {
+    font-size: 0.78rem;
+    color: var(--danger);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .hidden { display: none !important; }
 
 .settings-divider {
@@ -1444,6 +1472,18 @@ body {
 .play-zone {
     flex-shrink: 0;
     z-index: 1;
+}
+
+.install-action {
+    margin-top: 12px;
+}
+
+.btn-install {
+    width: 100%;
+    justify-content: center;
+    gap: 8px;
+    display: inline-flex;
+    align-items: center;
 }
 
 .main-content {

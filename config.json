@@ -1,6 +1,6 @@
 {
   "minecraftPath": "C:\\Users\\NoxRyu\\AppData\\Roaming\\.minecraft",
-  "javaPath": "",
+  "javaPath": "C:\\Program Files\\Java\\jdk-21\\bin\\javaw.exe",
   "disableGPU": true,
   "discordBot": {
     "token": "<TU_DISCORD_BOT_TOKEN_AQUI>",

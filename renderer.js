@@ -75,6 +75,57 @@ async function selectJavaExecutable() {
     showToast('Ruta de Java actualizada');
 }
 
+async function selectJavaForProfile() {
+    const selected = await ipc.invoke('select-java');
+    if (!selected) return;
+    if (!selected.toLowerCase().endsWith('javaw.exe')) {
+        showToast('Debes seleccionar el ejecutable javaw.exe');
+        return;
+    }
+    const input = document.getElementById('sk-input-java');
+    if (input) input.value = selected;
+}
+
+async function selectMinecraftDirForProfile() {
+    const selected = await ipc.invoke('select-directory');
+    if (!selected) return;
+    const lower = selected.toLowerCase();
+    if (!lower.includes('.minecraft') && !lower.endsWith('minecraft')) {
+        showToast('Debes seleccionar la carpeta .minecraft correcta');
+        return;
+    }
+    const input = document.getElementById('sk-input-minecraft');
+    if (input) input.value = selected;
+}
+
+function getLoaderOptionsForMode(mode) {
+    if (mode === 'optimized') {
+        return [
+            { value: 'optifine', label: 'Optifine' },
+            { value: 'fabric_iris', label: 'Fabric + Iris' }
+        ];
+    }
+    if (mode === 'custom') {
+        return [
+            { value: 'fabric', label: 'Fabric' },
+            { value: 'forge', label: 'Forge' },
+            { value: 'neoforge', label: 'NeoForge' }
+        ];
+    }
+    return [
+        { value: 'vanilla', label: 'Vanilla' }
+    ];
+}
+
+function onInstallModeChanged() {
+    const modeSelect = document.getElementById('sk-select-install-mode');
+    const loaderSelect = document.getElementById('sk-select-loader');
+    if (!modeSelect || !loaderSelect) return;
+
+    const loaderOptions = getLoaderOptionsForMode(modeSelect.value);
+    loaderSelect.innerHTML = loaderOptions.map((option) => `<option value="${option.value}">${option.label}</option>`).join('');
+}
+
 ipc.on('config-updated', (_event, data) => {
     if (data.minecraftPath || data.javaPath) {
         loadLauncherConfig();
@@ -85,18 +136,250 @@ ipc.on('config-updated', (_event, data) => {
 async function getVersionIcon(version) {
     try {
         const iconPath = await ipc.invoke('get-version-icon', version);
-        return iconPath || 'assets/default-icon.png';
+        if (iconPath) return iconPath;
+        return await getVersionTypeIcon(version);
     } catch (error) {
         console.error('Error getting version icon:', error);
-        return 'assets/default-icon.png';
+        return await getVersionTypeIcon(version);
     }
+}
+
+async function resolveAssetPath(candidates) {
+    for (const candidate of candidates) {
+        const exists = await ipc.invoke('check-asset-file', candidate);
+        if (exists) return candidate;
+    }
+    return candidates[0];
+}
+
+function parseVersionInfo(version) {
+    const normalized = String(version || '').toLowerCase().trim();
+    const versionMatch = normalized.match(/(\d+\.\d+(?:\.\d+)?(?:\.x)?)/);
+    const versionNumber = versionMatch ? versionMatch[1] : normalized || 'unknown';
+    let type = 'vanilla';
+
+    if (/optifine/i.test(normalized)) type = 'optifine';
+    else if (/neoforge/i.test(normalized)) type = 'neoforge';
+    else if (/forge/i.test(normalized)) type = 'forge';
+    else if (/iris/i.test(normalized)) type = 'iris';
+    else if (/fabric/i.test(normalized)) type = 'fabric';
+    else if (/lunarclient/i.test(normalized)) type = 'lunarclient';
+    else if (/badlion/i.test(normalized)) type = 'badlion';
+    else if (/batmod/i.test(normalized)) type = 'batmod';
+    else if (/vanilla/i.test(normalized)) type = 'vanilla';
+    else if (!/\d+\.\d+/.test(normalized)) type = 'custom';
+
+    const suffixParts = normalized.split(/[\s-_]+/).slice(1).filter(Boolean);
+    const variantParts = suffixParts.filter((part) => ![type, 'loader', 'hd', 'u', 'optifine', 'fabric', 'forge', 'iris', 'neoforge', 'lunarclient', 'badlion', 'batmod'].includes(part));
+    const variant = variantParts.join('-');
+
+    return { type, versionNumber, variant };
+}
+
+function getFriendlyTypeName(type) {
+    switch (type) {
+        case 'optifine': return 'Optifine';
+        case 'forge': return 'Forge';
+        case 'fabric': return 'Fabric';
+        case 'fabric_iris': return 'Fabric + Iris';
+        case 'iris': return 'Iris';
+        case 'neoforge': return 'NeoForge';
+        case 'lunarclient': return 'LunarClient';
+        case 'badlion': return 'Badlion';
+        case 'batmod': return 'BatMod';
+        default: return 'Vanilla';
+    }
+}
+
+function compareVersionStrings(a, b) {
+    const parse = (value) => {
+        const cleaned = String(value).replace(/[^0-9.]/g, '.');
+        return cleaned.split('.').filter(Boolean).map((part) => Number(part));
+    };
+
+    const aParts = parse(a);
+    const bParts = parse(b);
+    const length = Math.max(aParts.length, bParts.length);
+    for (let i = 0; i < length; i += 1) {
+        const aNum = aParts[i] || 0;
+        const bNum = bParts[i] || 0;
+        if (aNum > bNum) return 1;
+        if (aNum < bNum) return -1;
+    }
+    return a.localeCompare(b, undefined, { sensitivity: 'base' });
+}
+
+async function getVersionTypeIcon(version) {
+    const { type } = parseVersionInfo(version);
+    if (type === 'optifine') {
+        return await resolveAssetPath([
+            'assets/optifine-icon.png',
+            'assets/optifine-icon.jfif',
+            'assets/optifine-icon.svg',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    if (type === 'neoforge') {
+        return await resolveAssetPath([
+            'assets/neoforge-icon.png',
+            'assets/forge-icon.jfif',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    if (type === 'forge') {
+        return await resolveAssetPath([
+            'assets/forge-icon.jfif',
+            'assets/forge-icon.png',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    if (type === 'fabric') {
+        return await resolveAssetPath([
+            'assets/fabric-icon.png',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    if (type === 'iris') {
+        return await resolveAssetPath([
+            'assets/minecraft-icon.png',
+            'assets/fabric-icon.png'
+        ]);
+    }
+
+    if (type === 'lunarclient') {
+        return await resolveAssetPath([
+            'assets/lunarclient-icon.png',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    if (type === 'badlion') {
+        return await resolveAssetPath([
+            'assets/badlion-icon.png',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    if (type === 'batmod') {
+        return await resolveAssetPath([
+            'assets/batmod-icon.png',
+            'assets/minecraft-icon.png'
+        ]);
+    }
+
+    return await getVanillaBlockIcon(version);
+}
+
+async function getVanillaBlockIcon(version) {
+    const { versionNumber } = parseVersionInfo(version);
+    const parts = versionNumber.split('.').map((value) => parseInt(value, 10));
+    const major = parts[0] || 0;
+    const minor = parts[1] || 0;
+
+    let candidates = [
+        'crafting_table',
+        'chest',
+        'furnace',
+        'diamond_block',
+        'gold_block',
+        'grass_block',
+        'dirt',
+        'stone',
+        'bricks',
+        'redstone_block'
+    ];
+
+    if (major === 1 && minor >= 21) {
+        candidates = [
+            'azalea_top',
+            'flowering_azalea_top',
+            'tuff',
+            'calcite',
+            'mangrove_planks'
+        ];
+    } else if (major === 1 && minor >= 20) {
+        candidates = [
+            'bamboo_block_top',
+            'bamboo_planks',
+            'cherry_planks',
+            'torchflower',
+            'candle_lit'
+        ];
+    } else if (major === 1 && minor >= 19) {
+        candidates = [
+            'sculk_sensor_top',
+            'sculk_shrieker_top',
+            'sculk_vein',
+            'frogspawn',
+            'sniffer_egg_not_cracked_top'
+        ];
+    } else if (major === 1 && minor >= 18) {
+        candidates = [
+            'powder_snow',
+            'mud',
+            'mud_bricks',
+            'moss_block',
+            'pointed_dripstone_up_tip'
+        ];
+    } else if (major === 1 && minor >= 17) {
+        candidates = [
+            'amethyst_block',
+            'budding_amethyst',
+            'deepslate',
+            'dripstone_block',
+            'copper_block'
+        ];
+    } else if (major === 1 && minor >= 16) {
+        candidates = [
+            'netherite_block',
+            'copper_block',
+            'basalt_top',
+            'crying_obsidian',
+            'copper_ore'
+        ];
+    } else if (major === 1 && minor >= 13) {
+        candidates = [
+            'concrete',
+            'blue_concrete',
+            'orange_concrete',
+            'terracotta',
+            'glass'
+        ];
+    }
+
+    const hash = Array.from(versionNumber).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const selected = candidates[hash % candidates.length];
+    const basePath = `assets/block/${selected}`;
+
+    return await resolveAssetPath([
+        `${basePath}.png`,
+        `${basePath}.jfif`,
+        `${basePath}.svg`
+    ]);
+}
+
+function normalizeIconSource(iconPath) {
+    if (!iconPath) return 'Azure-Launcher.png';
+    if (typeof iconPath !== 'string') return 'Azure-Launcher.png';
+    if (iconPath.startsWith('data:') || iconPath.startsWith('http://') || iconPath.startsWith('https://') || iconPath.startsWith('file://')) {
+        return iconPath;
+    }
+    if (/^[a-zA-Z]:[\\/]/.test(iconPath) || iconPath.startsWith('/')) {
+        const normalized = iconPath.replace(/\\/g, '/');
+        return `file://${normalized}`;
+    }
+    return iconPath;
 }
 
 // Update version icon display
 async function updateVersionIcon(version) {
     const iconElement = document.getElementById('version-icon');
     if (iconElement) {
-        iconElement.src = await getVersionIcon(version);
+        iconElement.src = normalizeIconSource(await getVersionIcon(version));
     }
 }
 
@@ -145,16 +428,16 @@ async function autoLinkDiscord(account) {
 }
 
 const STANDARD_MINECRAFT_BLOCKS = [
-    { name: 'Mesa de crafteo', path: 'assets/blocks/crafting_table.png' },
-    { name: 'Cofre', path: 'assets/blocks/chest.png' },
-    { name: 'Horno', path: 'assets/blocks/furnace.png' },
-    { name: 'Diamante', path: 'assets/blocks/diamond_block.png' },
-    { name: 'Oro', path: 'assets/blocks/gold_block.png' },
-    { name: 'Hierba', path: 'assets/blocks/grass_block.png' },
-    { name: 'Tierra', path: 'assets/blocks/dirt_block.png' },
-    { name: 'Piedra', path: 'assets/blocks/stone.png' },
-    { name: 'Ladrillos', path: 'assets/blocks/bricks.png' },
-    { name: 'Redstone', path: 'assets/blocks/redstone_block.png' }
+    { name: 'Mesa de crafteo', path: 'assets/block/crafting_table.png' },
+    { name: 'Cofre', path: 'assets/block/chest.png' },
+    { name: 'Horno', path: 'assets/block/furnace.png' },
+    { name: 'Diamante', path: 'assets/block/diamond_block.png' },
+    { name: 'Oro', path: 'assets/block/gold_block.png' },
+    { name: 'Hierba', path: 'assets/block/grass_block.png' },
+    { name: 'Tierra', path: 'assets/block/dirt_block.png' },
+    { name: 'Piedra', path: 'assets/block/stone.png' },
+    { name: 'Ladrillos', path: 'assets/block/bricks.png' },
+    { name: 'Redstone', path: 'assets/block/redstone_block.png' }
 ];
 
 function saveVersionProfiles() {
@@ -204,7 +487,59 @@ function getVersionItemById(id, items) {
 
 function getVersionLabel(version) {
     const profile = getVersionProfile(version);
-    return profile?.alias || version;
+    if (profile?.alias) return profile.alias;
+
+    const { type, versionNumber } = parseVersionInfo(version);
+    switch (type) {
+        case 'optifine':
+            return `Optifine ${versionNumber}`;
+        case 'forge':
+            return `Forge ${versionNumber}`;
+        case 'fabric':
+            return `Fabric ${versionNumber}`;
+        case 'iris':
+            return `Iris ${versionNumber}`;
+        case 'vanilla':
+            return `${versionNumber}`;
+        default:
+            return versionNumber || version;
+    }
+}
+
+function compareVersionStrings(a, b) {
+    const parse = (value) => {
+        const match = String(value).match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+        if (!match) return [0, 0, 0];
+        return [Number(match[1] || 0), Number(match[2] || 0), Number(match[3] || 0)];
+    };
+
+    const aParts = parse(a);
+    const bParts = parse(b);
+    for (let i = 0; i < 3; i += 1) {
+        if (aParts[i] > bParts[i]) return 1;
+        if (aParts[i] < bParts[i]) return -1;
+    }
+    return 0;
+}
+
+function isOlderPatchVersion(version, installedVersions) {
+    const { type: currentType, versionNumber: currentVersion } = parseVersionInfo(version);
+    if (!currentVersion) return false;
+
+    const sanitizedCurrent = currentVersion.replace(/\.x$/, '');
+    const currentParts = sanitizedCurrent.split('.').map((part) => Number(part || 0));
+    const familyKey = `${currentType}:${currentParts[0] || 0}.${currentParts[1] || 0}`;
+
+    return installedVersions.some((other) => {
+        if (other === version) return false;
+        const { type: otherType, versionNumber: otherVersion } = parseVersionInfo(other);
+        if (!otherVersion || otherType !== currentType) return false;
+
+        const sanitizedOther = otherVersion.replace(/\.x$/, '');
+        const otherParts = sanitizedOther.split('.').map((part) => Number(part || 0));
+        const otherFamilyKey = `${otherType}:${otherParts[0] || 0}.${otherParts[1] || 0}`;
+        return otherFamilyKey === familyKey && compareVersionStrings(otherVersion, currentVersion) > 0;
+    });
 }
 
 function migrateLegacyVersionList() {
@@ -1919,6 +2254,71 @@ function removeDiscordLinkData(accountName = getActiveAccountName()) {
     if (!accountName || !legacyNick || legacyNick === String(accountName || '').trim().toLowerCase()) {
         localStorage.removeItem('azureDiscordLink');
     }
+}
+
+function clearDiscordLinkedStorage(accountName = getActiveAccountName()) {
+    const safeAccountName = String(accountName || '').trim();
+    const keysToRemove = [
+        'discord_tokens',
+        'discord_user',
+        'discord_user_id',
+        'discord_link'
+    ];
+
+    const scopedKey = getDiscordLinkStorageKey(accountName);
+    if (scopedKey) keysToRemove.push(scopedKey);
+
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+
+    const legacyLink = readJsonStorage('azureDiscordLink', null);
+    const legacyNick = String(legacyLink?.mcNick || '').trim().toLowerCase();
+    if (!safeAccountName || !legacyNick || legacyNick === safeAccountName.toLowerCase()) {
+        localStorage.removeItem('azureDiscordLink');
+    }
+
+    const identity = getLinkedIdentity() || safeAccountName;
+    if (identity) {
+        localStorage.removeItem(getFriendsStoreStorageKey(identity));
+    }
+
+    const scopedIdentity = cleanFriendKey(identity || '');
+    for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (scopedIdentity && (key === `azureFriendsStore:${scopedIdentity}` || key === `azureDiscordLink:${scopedIdentity}`)) {
+            localStorage.removeItem(key);
+        }
+    }
+}
+
+async function unlinkDiscordAccount() {
+    const confirm = await showConfirmModal(
+        t('unlinkTitle'),
+        t('unlinkConfirm'),
+        'danger'
+    );
+
+    if (!confirm) return;
+
+    const linkData = getDiscordLinkData();
+    const myTag = localStorage.getItem('discord_user') || getLinkedIdentity() || linkData?.fullIdentity || linkData?.mcNick || '';
+    const myKey = cleanFriendKey(myTag);
+
+    if (myTag && firebaseReady && firebaseDb && firebaseFns) {
+        try {
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `perfiles/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `amigos/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `solicitudes/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `presencia/${myKey}`));
+            await firebaseFns.remove(firebaseFns.ref(firebaseDb, `transferencias/${myKey}`));
+        } catch (error) {
+            console.error('Error removing remote Discord account data:', error);
+        }
+    }
+
+    clearDiscordLinkedStorage();
+    renderFriendsPanel();
+    showToast('Cuenta desvinculada correctamente.');
 }
 
 function normalizeFriendsStoreData(parsed = {}) {
@@ -3824,39 +4224,14 @@ async function renderVersionsUI() {
 
     container.innerHTML = '';
 
-    const addItem = document.createElement('div');
-    addItem.className = 'version-item';
-
-    const addInfo = document.createElement('div');
-    addInfo.className = 'version-info';
-    addInfo.style.cssText = 'flex-direction: row; align-items: center; gap: 10px;';
-    addInfo.innerHTML = '<i class="fa-solid fa-plus" style="color:#4ecdc4"></i><span class="version-alias">Crear instalación</span>';
-
-    const addButton = document.createElement('button');
-    addButton.className = 'btn-tuerca';
-    addButton.type = 'button';
-    addButton.title = 'Crear instalación';
-    addButton.innerHTML = '<i class="fa-solid fa-plus"></i>';
-    addButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openSkModal(null);
-    });
-
-    addItem.appendChild(addInfo);
-    addItem.appendChild(addButton);
-    addItem.addEventListener('click', () => openSkModal(null));
-    container.appendChild(addItem);
-
     for (const item of merged) {
         const div = document.createElement('div');
         div.className = 'version-item';
 
         const profile = getVersionProfile(item.version) || versionProfiles.find(p => p.id === item.id);
         const autoIcon = await getVersionIcon(item.version);
-        const iconPath = autoIcon !== 'assets/default-icon.png' ? autoIcon : (profile?.icon || 'Azure-Launcher.png');
-        const resolvedIcon = String(iconPath).startsWith('data:') || String(iconPath).startsWith('http') || String(iconPath).startsWith('file://')
-            ? iconPath
-            : `file://${iconPath}`;
+        const iconPath = autoIcon !== 'Azure-Launcher.png' ? autoIcon : (profile?.icon || 'Azure-Launcher.png');
+        const resolvedIcon = normalizeIconSource(iconPath);
 
         const leftGroup = document.createElement('div');
         leftGroup.style.cssText = 'display:flex; align-items: center; gap: 12px;';
@@ -3874,18 +4249,46 @@ async function renderVersionsUI() {
 
         const infoWrapper = document.createElement('div');
         infoWrapper.className = 'version-info';
-        infoWrapper.style.cssText = 'flex-direction: column; align-items: flex-start;';
+        infoWrapper.style.cssText = 'display:flex; flex-direction: column; align-items: flex-start; gap: 4px;';
 
+        const displayAlias = profile?.alias || getVersionLabel(item.version);
         const aliasSpan = document.createElement('span');
         aliasSpan.className = 'version-alias';
-        aliasSpan.textContent = item.alias;
+        aliasSpan.textContent = displayAlias;
 
-        const versionSpan = document.createElement('span');
-        versionSpan.className = 'version-real';
-        versionSpan.textContent = `Versión: ${item.version} ${item.installed ? '' : '(descargar)'}`;
+        const versionInfo = parseVersionInfo(item.version);
+        const showVersionDetails = displayAlias !== item.version && versionInfo.type !== 'vanilla';
+
+        if (profile?.loader && profile.loader !== 'vanilla') {
+            const loaderTag = document.createElement('span');
+            loaderTag.className = 'version-alias';
+            loaderTag.style.fontSize = '0.75rem';
+            loaderTag.style.opacity = '0.75';
+            loaderTag.textContent = `(${getFriendlyTypeName(profile.loader)})`;
+            infoWrapper.appendChild(loaderTag);
+        }
+        let versionSpan;
+        if (showVersionDetails) {
+            versionSpan = document.createElement('span');
+            versionSpan.className = 'version-real';
+            versionSpan.textContent = `Versión: ${item.version}${item.installed ? '' : ' (descargar)'}`;
+            infoWrapper.appendChild(versionSpan);
+        }
+
+        const isOldVersion = isOlderPatchVersion(item.version, installedVersions || []);
+        if (isOldVersion) {
+            const warningSpan = document.createElement('span');
+            warningSpan.className = 'version-warning';
+            warningSpan.textContent = 'Versión antigua';
+            if (versionSpan) {
+                versionSpan.classList.add('version-old');
+            } else {
+                aliasSpan.classList.add('version-old');
+            }
+            infoWrapper.appendChild(warningSpan);
+        }
 
         infoWrapper.appendChild(aliasSpan);
-        infoWrapper.appendChild(versionSpan);
         leftGroup.appendChild(iconImg);
         leftGroup.appendChild(infoWrapper);
 
@@ -3937,71 +4340,105 @@ async function renderVersionsUI() {
         versionSeleccionada = firstItem.version;
         const playText = document.getElementById('play-button-text');
         if (playText) playText.innerText = `JUGAR ${getVersionLabel(firstItem.version)}`;
-        // Marcar el primer item como activo (el segundo div, ya que el primero es "Crear instalación")
+        // Marcar el primer item real de versión
         const versionItems = container.querySelectorAll('.version-item');
-        if (versionItems.length > 1) {
-            versionItems[1].classList.add('active'); // El índice 1 es el primer item de versión
+        if (versionItems.length > 0) {
+            versionItems[0].classList.add('active');
         }
         showToast('Azure', `Versión seleccionada automáticamente: ${getVersionLabel(firstItem.version)}`, 'info');
     }
 }
 
 async function openSkModal(profileId = null) {
-    const select = document.getElementById('sk-select-version');
-    const nameInput = document.getElementById('sk-input-name');
-    const title = document.getElementById('sk-modal-title');
-    const deleteBtn = document.getElementById('sk-delete-btn');
+    try {
+        const select = document.getElementById('sk-select-version');
+        const nameInput = document.getElementById('sk-input-name');
+        const title = document.getElementById('sk-modal-title');
+        const deleteBtn = document.getElementById('sk-delete-btn');
+        const installModeSelect = document.getElementById('sk-select-install-mode');
+        const loaderSelect = document.getElementById('sk-select-loader');
+        const javaInput = document.getElementById('sk-input-java');
+        const mcInput = document.getElementById('sk-input-minecraft');
+        const optimizeCheckbox = document.getElementById('sk-optimize-checkbox');
 
-    if (!select || !nameInput || !title || !deleteBtn) return;
+        if (!select || !nameInput || !title || !deleteBtn || !installModeSelect || !loaderSelect || !javaInput || !mcInput || !optimizeCheckbox) {
+            showToast('Error interno: falta el modal de creación de instalación.');
+            return;
+        }
 
-    const localVersions = await ipc.invoke('get-local-versions');
-    select.innerHTML = '';
+        const localVersions = await ipc.invoke('get-local-versions');
+        select.innerHTML = '';
 
-    if (!Array.isArray(localVersions) || localVersions.length === 0) {
-        select.innerHTML = '<option value="" disabled selected>No hay versiones instaladas</option>';
-    } else {
-        localVersions.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = v;
-            select.appendChild(opt);
-        });
-    }
+        if (!Array.isArray(localVersions) || localVersions.length === 0) {
+            select.innerHTML = '<option value="" disabled selected>No hay versiones instaladas</option>';
+        } else {
+            localVersions.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                select.appendChild(opt);
+            });
+        }
 
-    if (profileId) {
-        const profile = getVersionProfileByIdentifier(profileId);
-        if (profile) {
-            currentEditId = profile.id;
-            title.innerText = 'Editar Instalación';
-            nameInput.value = profile.alias || profile.version || '';
-            deleteBtn.classList.remove('hidden');
+        if (profileId) {
+            const profile = getVersionProfileByIdentifier(profileId);
+            if (profile) {
+                currentEditId = profile.id;
+                title.innerText = 'Editar Instalación';
+                nameInput.value = profile.alias || profile.version || '';
+                deleteBtn.classList.remove('hidden');
+                installModeSelect.value = profile.type || 'vanilla';
+                onInstallModeChanged();
+                loaderSelect.value = profile.loader || loaderSelect.value;
+                mcInput.value = profile.minecraftPath || '';
+                javaInput.value = profile.javaPath || '';
+                optimizeCheckbox.checked = profile.optimizeMods || false;
 
-            if (profile.version && Array.from(select.options).find(opt => opt.value === profile.version)) {
-                select.value = profile.version;
+                if (profile.version && Array.from(select.options).find(opt => opt.value === profile.version)) {
+                    select.value = profile.version;
+                }
+            } else {
+                currentEditId = null;
+                title.innerText = 'Nueva Instalación';
+                nameInput.value = profileId;
+                deleteBtn.classList.add('hidden');
+                installModeSelect.value = 'vanilla';
+                onInstallModeChanged();
+                mcInput.value = '';
+                javaInput.value = '';
+                optimizeCheckbox.checked = false;
+
+                if (Array.from(select.options).find(opt => opt.value === profileId)) {
+                    select.value = profileId;
+                }
             }
         } else {
             currentEditId = null;
             title.innerText = 'Nueva Instalación';
-            nameInput.value = profileId;
+            nameInput.value = '';
             deleteBtn.classList.add('hidden');
-
-            if (Array.from(select.options).find(opt => opt.value === profileId)) {
-                select.value = profileId;
-            }
+            installModeSelect.value = 'vanilla';
+            onInstallModeChanged();
+            mcInput.value = '';
+            javaInput.value = '';
+            optimizeCheckbox.checked = false;
         }
-    } else {
-        currentEditId = null;
-        title.innerText = 'Nueva Instalación';
-        nameInput.value = '';
-        deleteBtn.classList.add('hidden');
-    }
 
-    document.getElementById('sk-modal').classList.remove('hidden');
+        document.getElementById('sk-modal').classList.remove('hidden');
+    } catch (error) {
+        console.error('Error abriendo el modal de instalación:', error);
+        showToast('No se pudo abrir el modal de instalación. Revisa la consola.');
+    }
 }
 
 function getVersionProfileByIdentifier(identifier) {
     return versionProfiles.find(p => p.id === identifier) || versionProfiles.find(p => p.version === identifier);
 }
+
+window.openSkModal = openSkModal;
+window.openIconSelectorModal = openIconSelectorModal;
+window.selectJavaForProfile = selectJavaForProfile;
+window.selectMinecraftDirForProfile = selectMinecraftDirForProfile;
 
 function ensureVersionProfileByIdentifier(identifier) {
     let profile = getVersionProfileByIdentifier(identifier);
@@ -4216,25 +4653,40 @@ function saveEditedProfile() {
 function saveProfile() {
     const alias = document.getElementById('sk-input-name').value.trim();
     const version = document.getElementById('sk-select-version').value;
+    const installMode = document.getElementById('sk-select-install-mode')?.value || 'vanilla';
+    const loader = document.getElementById('sk-select-loader')?.value || (installMode === 'optimized' ? 'optifine' : 'vanilla');
+    const profileMinecraftPath = document.getElementById('sk-input-minecraft')?.value.trim() || '';
+    const profileJavaPath = document.getElementById('sk-input-java')?.value.trim() || '';
+    const optimizeMods = document.getElementById('sk-optimize-checkbox')?.checked || false;
 
     if (!version) {
         alert('Selecciona una versión de Minecraft (local)');
         return;
     }
 
+    const newProfileData = {
+        alias: alias || `${getFriendlyTypeName(loader)} ${version}`,
+        version,
+        hidden: false,
+        type: installMode,
+        loader,
+        minecraftPath: profileMinecraftPath,
+        javaPath: profileJavaPath,
+        optimizeMods
+    };
+
     if (currentEditId) {
         const index = versionProfiles.findIndex(p => p.id === currentEditId);
         if (index !== -1) {
-            versionProfiles[index].alias = alias || version;
-            versionProfiles[index].version = version;
-            versionProfiles[index].hidden = false;
+            versionProfiles[index] = {
+                ...versionProfiles[index],
+                ...newProfileData
+            };
         }
     } else {
         versionProfiles.push({
             id: `vp-${Date.now()}`,
-            alias: alias || version,
-            version,
-            hidden: false
+            ...newProfileData
         });
     }
 
@@ -4600,11 +5052,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btnMinecraft) btnMinecraft.addEventListener('click', selectMinecraftDirectory);
         const btnJava = document.getElementById('btn-browse-java');
         if (btnJava) btnJava.addEventListener('click', selectJavaExecutable);
+        const installModeSelect = document.getElementById('sk-select-install-mode');
+        if (installModeSelect) installModeSelect.addEventListener('change', onInstallModeChanged);
+        onInstallModeChanged();
         const btnPlayMain = document.getElementById('btn-play-main');
         if (btnPlayMain) {
             btnPlayMain.addEventListener('click', lanzarJuego);
             btnPlayMain.disabled = false;
         }
+
+        const btnCreateInstallation = document.getElementById('btn-create-installation');
+        if (btnCreateInstallation) {
+            btnCreateInstallation.addEventListener('click', () => openSkModal(null));
+        }
+
         window.lanzarJuego = lanzarJuego;
 
         // Iniciar servicios

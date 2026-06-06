@@ -111,6 +111,11 @@
                 <button id="btn-play-main" class="btn-play">
                     <i class="fa-solid fa-play"></i> <span id="play-button-text" data-i18n="playNow">¡JUGAR AHORA!</span>
                 </button>
+                <div class="install-action">
+                    <button id="btn-create-installation" class="btn-primary btn-install" type="button">
+                        <i class="fa-solid fa-plus"></i> Crear instalación
+                    </button>
+                </div>
             </div>
         </aside>
 
@@ -318,9 +323,6 @@
                     <button class="btn-copy-path" onclick="copySSImage()">
                         <i class="fa-solid fa-copy"></i> Copiar
                     </button>
-                    <button class="btn-primary" onclick="establecerCapturaFavorita()">
-                        <i class="fa-solid fa-star"></i> Marcar como Favorita
-                    </button>
                 </div>
                 
             </div>
@@ -521,8 +523,43 @@
                 </div>
 
                 <div class="sk-group">
+                    <label>Tipo de instalación</label>
+                    <select id="sk-select-install-mode" onchange="onInstallModeChanged()">
+                        <option value="vanilla">Vanilla</option>
+                        <option value="optimized">Optimizadas</option>
+                        <option value="custom">Personalizadas</option>
+                    </select>
+                </div>
+
+                <div class="sk-group">
+                    <label>Plataforma / loader</label>
+                    <select id="sk-select-loader"></select>
+                </div>
+
+                <div class="sk-group">
                     <label>Versión</label>
                     <select id="sk-select-version"></select>
+                </div>
+
+                <div class="sk-group">
+                    <label>Ruta de .minecraft (opcional)</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <input type="text" id="sk-input-minecraft" placeholder="Usar ruta global" readonly style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.15); color: white; border: 1px solid rgba(255,255,255,0.12);">
+                        <button class="btn-secondary" type="button" onclick="selectMinecraftDirForProfile()">Seleccionar</button>
+                    </div>
+                </div>
+
+                <div class="sk-group">
+                    <label>Java por instalación (opcional)</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <input type="text" id="sk-input-java" placeholder="Usar Java global" readonly style="flex: 1; padding: 8px; border-radius: 5px; background: rgba(0,0,0,0.15); color: white; border: 1px solid rgba(255,255,255,0.12);">
+                        <button class="btn-secondary" type="button" onclick="selectJavaForProfile()">Seleccionar</button>
+                    </div>
+                </div>
+
+                <div class="sk-group" style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+                    <label style="margin: 0;">Instalación optimizada</label>
+                    <input type="checkbox" id="sk-optimize-checkbox">
                 </div>
             </div>
 

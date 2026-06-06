@@ -10,7 +10,7 @@ const fs = require('fs');
 const https = require('https');
 const http = require('http');
 const url = require('url');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const nbt = require('prismarine-nbt');
 const RPC = require('discord-rpc');
 const { getStatus } = require('mc-server-status');
@@ -118,6 +118,11 @@ if (fs.existsSync(configPath)) {
             config.minecraftPath = detectMinecraftPath();
             saveConfig();
         }
+        const detectedJava = detectJavaVersion();
+        if (detectedJava && detectedJava !== 'javaw.exe' && detectedJava !== config.javaPath) {
+            config.javaPath = detectedJava;
+            saveConfig();
+        }
     } catch (e) {
         console.error('Error cargando config:', e);
         config.minecraftPath = detectMinecraftPath();
@@ -126,6 +131,10 @@ if (fs.existsSync(configPath)) {
 } else {
     // Detectar automáticamente y crear config
     config.minecraftPath = detectMinecraftPath();
+    const detectedJava = detectJavaVersion();
+    if (detectedJava && detectedJava !== 'javaw.exe') {
+        config.javaPath = detectedJava;
+    }
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
 
@@ -415,28 +424,80 @@ function getAllInstallations() {
     return installations;
 }
 
-// Detectar Java automáticamente
+function resolveJavaFromSystemPath() {
+    try {
+        if (process.platform === 'win32') {
+            const result = execSync('where javaw.exe', { encoding: 'utf8' }).trim().split(/\r?\n/).find(Boolean);
+            if (result && fs.existsSync(result)) return result;
+        } else {
+            const result = execSync('which java', { encoding: 'utf8' }).trim().split(/\r?\n/).find(Boolean);
+            if (result && fs.existsSync(result)) return result;
+        }
+    } catch (error) {
+        return null;
+    }
+    return null;
+}
+
+function collectJavaCandidates() {
+    const candidates = [];
+    if (process.env.JAVA_HOME) {
+        candidates.push(path.join(process.env.JAVA_HOME, 'bin', 'javaw.exe'));
+        candidates.push(path.join(process.env.JAVA_HOME, 'bin', 'java.exe'));
+    }
+    if (process.env.JDK_HOME) {
+        candidates.push(path.join(process.env.JDK_HOME, 'bin', 'javaw.exe'));
+        candidates.push(path.join(process.env.JDK_HOME, 'bin', 'java.exe'));
+    }
+
+    const programFolders = [];
+    if (process.env['ProgramFiles']) programFolders.push(process.env['ProgramFiles']);
+    if (process.env['ProgramFiles(x86)']) programFolders.push(process.env['ProgramFiles(x86)']);
+    if (process.env['ProgramW6432']) programFolders.push(process.env['ProgramW6432']);
+
+    for (const folder of programFolders) {
+        const javaRoot = path.join(folder, 'Java');
+        if (!fs.existsSync(javaRoot)) continue;
+        for (const dirent of fs.readdirSync(javaRoot, { withFileTypes: true })) {
+            if (!dirent.isDirectory()) continue;
+            const candidate = path.join(javaRoot, dirent.name, 'bin', 'javaw.exe');
+            candidates.push(candidate);
+        }
+    }
+
+    candidates.push(path.join(process.env.HOMEDRIVE || 'C:', 'Program Files', 'Java', 'jdk-21', 'bin', 'javaw.exe'));
+    candidates.push(path.join(process.env.HOMEDRIVE || 'C:', 'Program Files', 'Java', 'jdk-17', 'bin', 'javaw.exe'));
+    candidates.push(path.join(process.env.HOMEDRIVE || 'C:', 'Program Files', 'Java', 'jdk-11', 'bin', 'javaw.exe'));
+    candidates.push(path.join(process.env.HOMEDRIVE || 'C:', 'Program Files', 'Java', 'jdk-8', 'bin', 'javaw.exe'));
+
+    return candidates.filter(Boolean);
+}
+
 function detectJavaVersion() {
     if (config.javaPath && fs.existsSync(config.javaPath)) {
         console.log(`Java detectado desde configuración: ${config.javaPath}`);
         return config.javaPath;
     }
 
-    const possibleJavas = [
-        'C:\\Program Files\\Java\\jdk-21\\bin\\javaw.exe',
-        'C:\\Program Files\\Java\\jdk-17\\bin\\javaw.exe',
-        'C:\\Program Files\\Java\\jdk-11\\bin\\javaw.exe',
-        'C:\\Program Files\\Java\\jdk-8\\bin\\javaw.exe',
-        'javaw.exe'
-    ];
-
-    for (const javaPath of possibleJavas) {
+    const candidates = collectJavaCandidates();
+    for (const javaPath of candidates) {
         if (fs.existsSync(javaPath)) {
-            console.log(`Java detectado automáticamente: ${javaPath}`);
+            console.log(`Java detectado automáticamente en ruta conocida: ${javaPath}`);
+            config.javaPath = javaPath;
+            saveConfig();
             return javaPath;
         }
     }
 
+    const systemJava = resolveJavaFromSystemPath();
+    if (systemJava) {
+        console.log(`Java detectado en PATH: ${systemJava}`);
+        config.javaPath = systemJava;
+        saveConfig();
+        return systemJava;
+    }
+
+    console.warn('No se encontró un javaw.exe válido, se usará javaw.exe por defecto del PATH.');
     return 'javaw.exe';
 }
 
@@ -1197,14 +1258,195 @@ function startDiscordLinkFlow() {
                 clearTimeout(timeoutId);
 
                 res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-                res.end('<h2>Discord vinculado correctamente. Puedes volver a Azure Launcher.</h2>');
+                res.end(`<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Discord vinculado | Azure Launcher</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            display: grid;
+            place-items: center;
+            background: radial-gradient(circle at top left, #5b8cff 0%, #2a2f52 55%, #151828 100%);
+            color: #f8fafc;
+        }
+        .card {
+            max-width: 520px;
+            width: 100%;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 24px;
+            box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+            padding: 32px;
+            text-align: center;
+        }
+        .icon-bar {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .icon {
+            width: 52px;
+            height: 52px;
+            display: grid;
+            place-items: center;
+            border-radius: 16px;
+            background: rgba(255,255,255,0.08);
+        }
+        .title {
+            font-size: 1.55rem;
+            font-weight: 700;
+            margin: 0 0 12px;
+        }
+        .subtitle {
+            margin: 0 0 24px;
+            color: #cbd5e1;
+            line-height: 1.7;
+        }
+        .highlight {
+            color: #a5b4fc;
+        }
+        .button-row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .button {
+            border: none;
+            border-radius: 999px;
+            background: #4f46e5;
+            color: white;
+            font-size: 0.95rem;
+            padding: 12px 22px;
+            cursor: pointer;
+            transition: transform 0.15s ease, background-color 0.15s ease;
+            text-decoration: none;
+        }
+        .button:hover {
+            transform: translateY(-1px);
+            background: #4338ca;
+        }
+        .secondary {
+            background: rgba(255,255,255,0.08);
+            color: #e2e8f0;
+        }
+        .secondary:hover {
+            background: rgba(255,255,255,0.16);
+        }
+        .note {
+            margin-top: 20px;
+            font-size: 0.95rem;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon-bar">
+            <div class="icon" aria-hidden="true">🚀</div>
+            <div class="icon" aria-hidden="true">💬</div>
+        </div>
+        <h1 class="title">Discord vinculado</h1>
+        <p class="subtitle">Tu cuenta de Discord ya está conectada con <span class="highlight">Azure Launcher</span>. Puedes volver a la aplicación y continuar.</p>
+        <div class="button-row">
+            <button class="button" id="closeBtn">Cerrar y volver al launcher</button>
+            <a class="button secondary" href="#" id="manualBtn">Volver manualmente</a>
+        </div>
+        <p class="note">Si la ventana no se cierra automáticamente, haz clic en "Volver manualmente".</p>
+    </div>
+    <script>
+        const closeWindow = () => {
+            if (window.opener && !window.opener.closed) {
+                window.opener.focus();
+            }
+            window.close();
+        };
+
+        document.getElementById('closeBtn').addEventListener('click', closeWindow);
+        document.getElementById('manualBtn').addEventListener('click', (event) => {
+            event.preventDefault();
+            closeWindow();
+        });
+
+        setTimeout(closeWindow, 3000);
+    </script>
+</body>
+</html>
+`);
 
                 cleanup();
                 resolve(userData);
             } catch (error) {
                 clearTimeout(timeoutId);
                 res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
-                res.end('<h2>No se pudo completar la vinculación con Discord.</h2>');
+                res.end(`<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Error de Discord | Azure Launcher</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            display: grid;
+            place-items: center;
+            background: radial-gradient(circle at top left, #b91c1c 0%, #1f2937 55%, #0f172a 100%);
+            color: #f8fafc;
+        }
+        .card {
+            max-width: 520px;
+            width: 100%;
+            background: rgba(15, 23, 42, 0.96);
+            border: 1px solid rgba(248, 113, 113, 0.18);
+            border-radius: 24px;
+            box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+            padding: 32px;
+            text-align: center;
+        }
+        .title {
+            font-size: 1.55rem;
+            font-weight: 700;
+            margin: 0 0 12px;
+            color: #fecaca;
+        }
+        .subtitle {
+            margin: 0 0 24px;
+            color: #cbd5e1;
+            line-height: 1.7;
+        }
+        .button {
+            border: none;
+            border-radius: 999px;
+            background: #ef4444;
+            color: white;
+            font-size: 0.95rem;
+            padding: 12px 22px;
+            cursor: pointer;
+            transition: transform 0.15s ease, background-color 0.15s ease;
+        }
+        .button:hover {
+            transform: translateY(-1px);
+            background: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1 class="title">Error al vincular Discord</h1>
+        <p class="subtitle">No se pudo completar la autorización. Asegúrate de intentar nuevamente desde Azure Launcher.</p>
+        <button class="button" onclick="window.close()">Cerrar</button>
+    </div>
+</body>
+</html>
+`);
                 cleanup();
                 reject(error);
             }
@@ -1594,6 +1836,14 @@ ipcMain.on('restart_app', () => {
 
 // Configuración
 ipcMain.handle('get-config', () => config);
+ipcMain.handle('check-asset-file', (_event, relativePath) => {
+    try {
+        const resolved = path.join(__dirname, relativePath);
+        return fs.existsSync(resolved);
+    } catch (error) {
+        return false;
+    }
+});
 ipcMain.handle('get-news', async () => {
     try {
         const newsPath = path.join(__dirname, 'news.json');
